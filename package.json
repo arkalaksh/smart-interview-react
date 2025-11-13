@@ -10,8 +10,11 @@
     "axios": "^1.13.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.5",
     "react-scripts": "^5.0.1",
+    "react-speech-recognition": "^4.0.1",
     "react-webcam": "^7.2.0",
+    "regenerator-runtime": "^0.14.1",
     "socket.io-client": "^4.8.1",
     "web-vitals": "^2.1.4"
   },
