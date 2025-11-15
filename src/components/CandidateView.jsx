@@ -15,6 +15,7 @@ const CandidateView = ({ roomId, userName }) => {
   const [calibrationStep, setCalibrationStep] = useState(0);
   const [isGazeActive, setIsGazeActive] = useState(false);
   const [currentGaze, setCurrentGaze] = useState({ x: 0, y: 0 });
+   const HUGGINGFACE_PROXY_URL = 'http://localhost:5000/api/ai-detect';
 
   // Speech Recognition and AI Detection States
   const [transcribedText, setTranscribedText] = useState('');
@@ -195,10 +196,9 @@ const CandidateView = ({ roomId, userName }) => {
     }
     
     // Check average sentence length (AI tends to be 80-150 chars)
-    const avgSentenceLength = text.length / sentences.length;
-    if (avgSentenceLength > 80 && avgSentenceLength < 150) {
-      score += 10;
-    }
+    const sentenceCount = sentences.length;
+const avgSentenceLength = sentenceCount > 0 ? text.length / sentenceCount : 0; // or assign a default e.g. 100
+
     
     // Check for personal pronouns (AI is less personal)
     const personalPronouns = (text.match(/\b(i|me|my|mine|we|us|our)\b/gi) || []).length;
@@ -236,29 +236,29 @@ const CandidateView = ({ roomId, userName }) => {
       console.log('🔍 Attempting Hugging Face AI detection...');
       const apiResult = await tryHuggingFaceAPI(text);
       
-      if (apiResult !== null) {
-        setAiDetectionScore(apiResult.score);
-        setCurrentModel(apiResult.model);
-        setDetectionMethod('Hugging Face API');
-        
-        if (apiResult.score > 60) {
-          sendAlert({
-            type: 'AI_GENERATED_RESPONSE',
-            message: `Possible AI-generated answer detected (${apiResult.score}% confidence)`,
-            severity: apiResult.score > 80 ? 'critical' : 'medium',
-            timestamp: new Date().toISOString(),
-            aiData: {
-              percentage: apiResult.score,
-              model: apiResult.model,
-              method: 'API',
-              textSample: text.substring(0, 200)
-            }
-          });
-        }
-        
-        setIsAnalyzing(false);
-        return;
-      }
+if (apiResult !== null) {
+  setAiDetectionScore(apiResult.score);
+  setCurrentModel(apiResult.model);
+  setDetectionMethod("Hugging Face API");
+
+  // 🔥 SEND AI RESULT to interviewer
+  sendAlert({
+    type: "AI_RESULT",
+    message: `AI Detection Score: ${apiResult.score}%`,
+    severity: apiResult.score > 60 ? "medium" : "low",
+    timestamp: new Date().toISOString(),
+    aiData: {
+      percentage: apiResult.score,
+      method: "API",
+      model: apiResult.model,
+      textSample: text.substring(0, 200),
+    },
+  });
+
+  setIsAnalyzing(false);
+  return;
+}
+
     } catch (error) {
       console.log('⚠️ Hugging Face API unavailable:', error.message);
     }
@@ -271,101 +271,47 @@ const CandidateView = ({ roomId, userName }) => {
     setCurrentModel('Rule-based Algorithm');
     setDetectionMethod('Local Analysis');
     
-    if (ruleScore > 60) {
-      sendAlert({
-        type: 'AI_GENERATED_RESPONSE',
-        message: `Possible AI-generated answer detected (${ruleScore}% confidence - Rule-based)`,
-        severity: ruleScore > 80 ? 'critical' : 'medium',
-        timestamp: new Date().toISOString(),
-        aiData: {
-          percentage: ruleScore,
-          method: 'rule-based',
-          textSample: text.substring(0, 200)
-        }
-      });
-    }
+   sendAlert({
+  type: "AI_RESULT",
+  message: `AI Detection Score: ${ruleScore}% (Rule-based)`,
+  severity: ruleScore > 60 ? "medium" : "low",
+  timestamp: new Date().toISOString(),
+  aiData: {
+    percentage: ruleScore,
+    method: "rule-based",
+    model: "Rule-based Algorithm",
+    textSample: text.substring(0, 200),
+  },
+});
+
     
     setIsAnalyzing(false);
   };
 
   // ==================== HUGGING FACE API WITH RETRY ====================
   
-  const tryHuggingFaceAPI = async (text, retries = 3) => {
-    const models = [
-      'roberta-base-openai-detector',
-      'Hello-SimpleAI/chatgpt-detector-roberta',
-      'andreas122001/roberta-base-ai-detector'
-    ];
-    
-    for (const model of models) {
-      for (let attempt = 0; attempt < retries; attempt++) {
-        try {
-          console.log(`Attempt ${attempt + 1}/${retries} with model: ${model}`);
-          
-          const response = await fetch(
-            `https://api-inference.huggingface.co/models/${model}`,
-            {
-              method: 'POST',
-              headers: { 
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ 
-                inputs: text,
-                options: {
-                  wait_for_model: true,
-                  use_cache: false
-                }
-              })
-            }
-          );
-          
-          if (response.status === 503) {
-            const data = await response.json();
-            if (data.error && data.error.includes('loading')) {
-              const waitTime = data.estimated_time || 20;
-              console.log(`Model loading, waiting ${waitTime} seconds...`);
-              await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
-              continue; // Retry
-            }
-          }
-          
-          if (!response.ok) {
-            console.log(`Model ${model} returned status ${response.status}`);
-            continue; // Try next model
-          }
-          
-          const result = await response.json();
-          
-          if (result.error) {
-            console.log(`Model ${model} error:`, result.error);
-            continue;
-          }
-          
-          if (Array.isArray(result) && result.length > 0) {
-            const fakeResult = result.find(r => 
-              r.label?.toLowerCase().includes('fake') ||
-              r.label?.toLowerCase().includes('ai') ||
-              r.label === 'LABEL_1'
-            );
-            
-            if (fakeResult) {
-              const score = Math.round(fakeResult.score * 100);
-              console.log(`✅ Success with ${model}: ${score}%`);
-              return { score, model };
-            }
-          }
-          
-        } catch (error) {
-          console.log(`Error with ${model} (attempt ${attempt + 1}):`, error.message);
-          if (attempt < retries - 1) {
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
-          }
-        }
-      }
+ const proxyUrl = 'http://localhost:5000/api/ai-detect';
+const model = 'roberta-base-openai-detector';
+
+const tryHuggingFaceAPI = async (text) => {
+  try {
+    const response = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, model }),
+    });
+    if (!response.ok) {
+      const errJson = await response.json();
+      throw new Error(errJson.error || 'API Error');
     }
-    
-    return null; // All models failed
-  };
+    const result = await response.json();
+    // Handle result as before
+  } catch (error) {
+    console.error('Error calling proxy API:', error);
+    return null;
+  }
+};
+
 
   // ==================== EYE TRACKING & CONNECTION FUNCTIONS ====================
   // [Keep all your existing functions: loadWebGazer, startCalibration, etc.]
