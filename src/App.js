@@ -1,25 +1,15 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
-import AuthPage from './components/SignInPage';
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import RoomSelection from './components/RoomSelection';
 import CandidateView from './components/CandidateView';
- import InterviewerView from './components/InterviewerView';
-
-// Protected Route Component
-const ProtectedRoute = ({ children }) => {
-  const user = localStorage.getItem('user');
-  
-  if (!user) {
-    return <Navigate to="/auth" replace />;
-  }
-  
-  return children;
-};
+import InterviewerView from './components/InterviewerView';
 
 // Wrapper for CandidateView to extract roomId from URL
 const CandidateViewWrapper = () => {
   const { roomId } = useParams();
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  
+  // Get user from localStorage or use default
+  const user = JSON.parse(localStorage.getItem('user') || '{"name":"Guest"}');
   
   return <CandidateView roomId={roomId} userName={user.name} />;
 };
@@ -27,51 +17,35 @@ const CandidateViewWrapper = () => {
 // Wrapper for InterviewerView
 const InterviewerViewWrapper = () => {
   const { roomId } = useParams();
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
   
-   return <InterviewerView roomId={roomId} userName={user.name} />;
+  // Get user from localStorage or use default
+  const user = JSON.parse(localStorage.getItem('user') || '{"name":"Interviewer"}');
+  
+  return <InterviewerView roomId={roomId} userName={user.name} />;
 };
 
 function App() {
   return (
     <Router>
       <Routes>
-        {/* Auth Page - Default landing */}
-        <Route path="/" element={<AuthPage />} />
-        <Route path="/auth" element={<AuthPage />} />
-        
-        {/* Room Selection Page - After login */}
-        <Route 
-          path="/interview" 
-          element={
-            <ProtectedRoute>
-              <RoomSelection />
-            </ProtectedRoute>
-          } 
-        />
+        {/* Room Selection Page - Default landing (NO AUTH REQUIRED) */}
+        <Route path="/" element={<RoomSelection />} />
+        <Route path="/interview" element={<RoomSelection />} />
         
         {/* Candidate Interview Page */}
         <Route 
           path="/interview/candidate/:roomId" 
-          element={
-            <ProtectedRoute>
-              <CandidateViewWrapper />
-            </ProtectedRoute>
-          } 
+          element={<CandidateViewWrapper />} 
         />
         
         {/* Interviewer Interview Page */}
         <Route 
           path="/interview/interviewer/:roomId" 
-          element={
-            <ProtectedRoute>
-              <InterviewerViewWrapper />
-            </ProtectedRoute>
-          } 
+          element={<InterviewerViewWrapper />} 
         />
         
-        {/* Redirect unknown routes */}
-        <Route path="*" element={<Navigate to="/auth" replace />} />
+        {/* Redirect unknown routes to room selection */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
   );
