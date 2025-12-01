@@ -301,18 +301,70 @@ useEffect(() => {
     };
   }, []);
 
-  // ==================== STEP 1: NAME ENTRY ====================
-  
-  const handleNameSubmit = () => {
-    if (!candidateName.trim()) {
-      alert('Please enter your name');
-      return;
+  //===================== save the answers to db ==============
+
+  const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCount, aiScore, detectionMethod, modelUsed }) => {
+  try {
+    const response = await fetch('http://localhost:5000/api/auth/answers/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        roomId,
+        candidateName,
+        answerText,
+        wordCount,
+        aiScore,
+        detectionMethod,
+        modelUsed
+      })
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      console.log('💾 Answer saved to DB with ID:', data.answerId);
+    } else {
+      console.error('❌ Failed to save answer:', data.error);
     }
+  } catch (error) {
+    console.error('❌ Network error saving answer:', error);
+  }
+};
+
+
+  // ==================== STEP 1: NAME ENTRY ====================
+ const handleNameSubmit = async () => {
+  if (!candidateName.trim()) {
+    alert('Please enter your name');
+    return;
+  }
+  
+  console.log('✅ Name entered:', candidateName);
+  
+  // 🚀 Save candidate name to database
+  try {
+    const response = await fetch('http://localhost:5000/api/auth/rooms/update-candidate-name', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId, candidateName: candidateName.trim() })
+    });
     
-    console.log('✅ Name entered:', candidateName);
-    console.log('➡️ Moving to calibration');
-    setCurrentStep('calibration');
-  };
+    const data = await response.json(); // ✅ PARSE RESPONSE
+    
+    if (response.ok) {
+      console.log('💾 Candidate name saved:', data.message);
+    } else {
+      console.error('❌ Save failed:', data.error || 'Unknown error'); // ✅ BETTER ERROR
+      console.warn('⚠️ Failed to save name (continuing anyway)');
+    }
+  } catch (error) {
+    console.error('❌ Network error:', error);
+  }
+  
+  console.log('➡️ Moving to calibration');
+  setCurrentStep('calibration');
+};
+
 
   // ==================== STEP 2: WEBGAZER & CALIBRATION ====================
 
@@ -596,66 +648,66 @@ useEffect(() => {
     return Math.max(0, Math.min(100, score));
   };
 
-  const analyzeTextWithAI = async (text) => {
-    if (!text || text.trim().length < 10) return;
-    
-    console.log('🔍 Analyzing text...');
-    setIsAnalyzing(true);
-    
-    try {
-      const apiResult = await tryHuggingFaceAPI(text);
-      
-      if (apiResult !== null) {
-        setAiDetectionScore(apiResult.score);
-        setCurrentModel(apiResult.model);
-        setDetectionMethod("Hugging Face API");
+const analyzeTextWithAI = async (text) => {
+  if (!text || text.trim().length < 10) return;
 
-        sendAlert({
-          roomId,
-          type: "AI_DETECTION_RESULT",
-          message: `AI Detection: ${apiResult.score}% likelihood`,
-          severity: apiResult.score > 70 ? "high" : apiResult.score > 50 ? "medium" : "low",
-          timestamp: new Date().toISOString(),
-          aiData: {
-            aiScore: apiResult.score,
-            detectionMethod: "Hugging Face API",
-            model: apiResult.model,
-            textAnalyzed: text.substring(0, 300),
-            fullTextLength: text.length,
-            wordCount: text.trim().split(/\s+/).length,
-          },
-        });
+  console.log('🔍 Analyzing text...');
+  setIsAnalyzing(true);
 
-        setIsAnalyzing(false);
-        return;
-      }
-    } catch (error) {
-      console.log('⚠️ API unavailable, using rule-based');
+  const wordCount = text.trim().split(/\s+/).length;
+  
+  try {
+    const apiResult = await tryHuggingFaceAPI(text);
+    
+    let aiScore, detectionMethod, modelUsed;
+    if (apiResult !== null) {
+      aiScore = apiResult.score;
+      detectionMethod = "Hugging Face API";
+      modelUsed = apiResult.model;
+    } else {
+      aiScore = analyzeTextRuleBased(text);
+      detectionMethod = "Rule-based Algorithm";
+      modelUsed = "Local Pattern Matching";
     }
-    
-    const ruleScore = analyzeTextRuleBased(text);
-    setAiDetectionScore(ruleScore);
-    setCurrentModel('Rule-based Algorithm');
-    setDetectionMethod('Local Analysis');
-    
+
+    // Save answer and AI results to the database
+    await saveAnswerToDatabase({
+      roomId,
+      candidateName,
+      answerText: text.trim(),
+      wordCount,
+      aiScore,
+      detectionMethod,
+      modelUsed
+    });
+
+    setAiDetectionScore(aiScore);
+    setCurrentModel(modelUsed);
+    setDetectionMethod(detectionMethod);
+
     sendAlert({
       roomId,
       type: "AI_DETECTION_RESULT",
-      message: `AI Detection: ${ruleScore}% likelihood`,
-      severity: ruleScore > 70 ? "high" : ruleScore > 50 ? "medium" : "low",
+      message: `AI Detection: ${aiScore}% likelihood`,
+      severity: aiScore > 70 ? "high" : aiScore > 50 ? "medium" : "low",
       timestamp: new Date().toISOString(),
       aiData: {
-        aiScore: ruleScore,
-        detectionMethod: "Rule-based Algorithm",
-        model: "Local Pattern Matching",
+        aiScore,
+        detectionMethod,
+        model: modelUsed,
         textAnalyzed: text.substring(0, 300),
         fullTextLength: text.length,
-        wordCount: text.trim().split(/\s+/).length,
+        wordCount
       },
     });
-    
-    setIsAnalyzing(false);
-  };
+
+  } catch (error) {
+    console.log('⚠️ API unavailable, using rule-based');
+  }
+
+  setIsAnalyzing(false);
+};
+
 
   const tryHuggingFaceAPI = async (text) => {
     try {

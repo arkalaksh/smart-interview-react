@@ -1,0 +1,196 @@
+/* Wrapper to center the whole layout horizontally on page */
+.page-center-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 40px 16px;
+  background-color: #f4f4f4; /* optional background */
+  min-height: 100vh;
+}
+
+/* Layout similar to view: calendar left, detail panel right */
+.view-calendar-layout {
+  display: flex;
+  gap: 32px; /* increased gap */
+  align-items: flex-start;
+  max-width: 1000px; /* constrain width */
+  width: 100%;
+}
+
+/* Calendar container */
+.view-calendar-wrapper {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  width: 480px; /* larger width */
+  min-width: 360px;
+  flex-shrink: 0;
+}
+
+/* Side panel for selected day */
+.view-calendar-sidepanel {
+  flex: 1;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  min-width: 420px;
+  max-width: 600px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #111;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.view-calendar-sidepanel h3 {
+  margin: 0 0 18px;
+  font-size: 20px;
+  font-weight: 600;
+  border-bottom: 1px solid #e1e3e6;
+  padding-bottom: 10px;
+}
+
+/* Empty text */
+.empty-text {
+  color: #666;
+  font-size: 14px;
+  font-style: italic;
+  margin-top: 12px;
+}
+
+/* Interview card styling */
+.interview-card {
+  border: 1px solid #e1e3e6;
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: #f9fafb;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  transition: box-shadow 0.2s ease;
+}
+
+.interview-card:hover {
+  box-shadow: 0 4px 8px rgb(0 0 0 / 0.1);
+}
+
+.interview-id {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  color: #444;
+  margin-bottom: 10px;
+}
+
+.interview-id span {
+  color: #666;
+  font-weight: 500;
+}
+
+.interview-links {
+  display: flex;
+  gap: 14px;
+}
+
+.interview-links a {
+  font-size: 14px;
+  color: #464feb;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.interview-links a:hover {
+  text-decoration: underline;
+}
+
+/* ===== React-Calendar overrides in view style ===== */
+
+.view-calendar {
+  border: none;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Header / navigation */
+.view-calendar .react-calendar__navigation {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.view-calendar .react-calendar__navigation button {
+  min-width: 36px;
+  background: transparent;
+  border-radius: 6px;
+  color: #111;
+  font-weight: 600;
+  padding: 4px 8px;
+}
+
+.view-calendar .react-calendar__navigation button:enabled:hover {
+  background-color: #f3f2f1;
+}
+
+.view-calendar .react-calendar__navigation__label {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+/* Weekday row */
+.view-calendar .react-calendar__month-view__weekdays {
+  text-transform: uppercase;
+  font-size: 14px;
+  color: #616161;
+}
+
+.view-calendar .react-calendar__month-view__weekdays__weekday {
+  padding: 8px 0;
+}
+
+/* Day tiles */
+.view-calendar .react-calendar__tile {
+  padding: 12px 0;
+  position: relative;
+  border-radius: 8px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  font-size: 17px;
+}
+
+.view-calendar .react-calendar__tile:enabled:hover {
+  background-color: #f3f2f1;
+  cursor: pointer;
+}
+
+/* Today pill */
+.view-calendar .react-calendar__tile--now {
+  background: transparent;
+  border: 2px solid #d0d7e2;
+}
+
+/* Selected day */
+.view-calendar .react-calendar__tile--active {
+  background: #464feb;
+  color: #fff;
+  font-weight: 700;
+}
+
+/* Day with interview: small view-like dot under date */
+.view-calendar .has-interview {
+  font-weight: 600;
+}
+
+.view-calendar .has-interview::after {
+  content: '';
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  background-color: #e81123; /* view-style red accent */
+  box-shadow: 0 0 4px #e81123aa;
+}
+
+/* Disable gray neighbors like view */
+.view-calendar .react-calendar__month-view__days__day--neighboringMonth {
+  color: #b0b0b0;
+}

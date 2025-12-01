@@ -1,278 +1,394 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const AuthPage = () => {
-  const [isSignUp, setIsSignUp] = useState(false);
+const HRAuthPage = () => {
+  const [mode, setMode] = useState('signup'); // 'signup' or 'login'
   const [formData, setFormData] = useState({
-    name: '',
+    fullName: '',
     email: '',
-    password: '',
-    confirmPassword: ''
+    phone: '',
+    role: 'HR',
+    otp: '',
   });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
-  
+  const [otpSent, setOtpSent] = useState(false);
   const navigate = useNavigate();
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: type === 'checkbox' ? checked : value,
     }));
-    // Clear error for this field
     if (errors[name]) {
-      setErrors(prev => ({
-        ...prev,
-        [name]: ''
-      }));
+      setErrors(prev => ({ ...prev, [name]: '' }));
     }
   };
 
-  const validateForm = () => {
-    const newErrors = {};
-
-    if (isSignUp && !formData.name.trim()) {
-      newErrors.name = 'Name is required';
-    }
-
-    if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Email is invalid';
-    }
-
-    if (!formData.password) {
-      newErrors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
-    }
-
-    if (isSignUp && formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  // For SIGNUP: need full details
+  const validateRequestOtpSignup = () => {
+    let errs = {};
+    if (!formData.email.trim()) errs.email = 'Email is required';
+    if (!formData.fullName.trim()) errs.fullName = 'Full name is required';
+    if (!formData.phone.trim()) errs.phone = 'Phone number is required';
+    if (!formData.role) errs.role = 'Role is required';
+    return errs;
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  // For LOGIN: only email
+  const validateRequestOtpLogin = () => {
+    let errs = {};
+    if (!formData.email.trim()) errs.email = 'Email is required';
+    return errs;
+  };
 
-    if (!validateForm()) return;
+  const validateVerifyOtp = () => {
+    let errs = {};
+    if (!formData.otp.trim()) errs.otp = 'OTP is required';
+    if (!formData.email.trim()) errs.email = 'Email is required';
+    return errs;
+  };
+
+  const requestOtp = async () => {
+    const errs =
+      mode === 'signup' ? validateRequestOtpSignup() : validateRequestOtpLogin();
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      return false;
+    }
 
     setLoading(true);
-
     try {
-      // Simulate API call - Replace with your actual authentication logic
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const url =
+        mode === 'signup'
+          ? 'http://localhost:5000/api/auth/register'
+          : 'http://localhost:5000/api/auth/login-request-otp'; // <-- create this login endpoint
 
-      if (isSignUp) {
-        console.log('Sign Up:', formData);
-        // Add your sign-up API call here
-        // const response = await fetch('/api/signup', { ... });
+      const body =
+        mode === 'signup'
+          ? {
+              email: formData.email,
+              name: formData.fullName,
+              phone: formData.phone,
+              role: formData.role,
+            }
+          : {
+              email: formData.email,
+            };
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setOtpSent(true);
+        setErrors({});
       } else {
-        console.log('Sign In:', { email: formData.email, password: formData.password });
-        // Add your sign-in API call here
-        // const response = await fetch('/api/signin', { ... });
+        setErrors({ submit: data.error || 'Failed to send OTP' });
       }
+    } catch (e) {
+      setErrors({ submit: e.message || 'Error requesting OTP' });
+    } finally {
+      setLoading(false);
+    }
+    return true;
+  };
+  const verifyOtp = async () => {
+    const errs = validateVerifyOtp();
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      return;
+    }
+    setLoading(true);
+    try {
+      const url =
+        mode === 'signup'
+          ? 'http://localhost:5000/api/auth/verify-otp'   // verify and create account
+          : 'http://localhost:5000/api/auth/login-verify-otp'; // <-- login verify endpoint
 
-      // Store user data in localStorage
-      const userData = {
-        name: formData.name || formData.email.split('@')[0],
-        email: formData.email,
-        isGuest: false
-      };
-      localStorage.setItem('user', JSON.stringify(userData));
+      const body =
+        mode === 'signup'
+          ? {
+              email: formData.email,
+              otp: formData.otp,
+              name: formData.fullName,
+              phone: formData.phone,
+              role: formData.role,
+            }
+          : {
+              email: formData.email,
+              otp: formData.otp,
+            };
 
-      // Navigate to interview platform
-      navigate('/interview');
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
 
-    } catch (error) {
-      console.error('Authentication error:', error);
-      setErrors({ submit: 'Authentication failed. Please try again.' });
+      const data = await response.json();
+      if (response.ok) {
+        if (data.user) {
+          localStorage.setItem('user', JSON.stringify(data.user));
+        }
+        navigate('/interview');
+      } else {
+        setErrors({ submit: data.error || 'OTP verification failed' });
+      }
+    } catch (e) {
+      setErrors({ submit: e.message || 'Error verifying OTP' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGuestAccess = () => {
-    console.log('Guest access');
-    
-    // Generate random guest name
-    const guestName = `Guest_${Math.random().toString(36).substring(7)}`;
-    
-    // Store guest user data
-    const guestData = {
-      name: guestName,
-      email: `${guestName}@guest.com`,
-      isGuest: true
-    };
-    localStorage.setItem('user', JSON.stringify(guestData));
-    
-    // Navigate to interview platform
-    navigate('/interview');
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setErrors({});
+    if (!otpSent) {
+      requestOtp();
+    } else {
+      verifyOtp();
+    }
   };
 
-  const toggleMode = () => {
-    setIsSignUp(!isSignUp);
+  const switchToMode = (newMode) => {
+    setMode(newMode);
     setFormData({
-      name: '',
+      fullName: '',
       email: '',
-      password: '',
-      confirmPassword: ''
+      phone: '',
+      role: 'HR',
+      otp: '',
     });
     setErrors({});
+    setOtpSent(false);
   };
+
+  const isSignup = mode === 'signup';
 
   return (
     <div style={styles.container}>
       <div style={styles.authBox}>
-        {/* Header */}
         <div style={styles.header}>
-          <h1 style={styles.title}>
-            🎥 Interview Platform
-          </h1>
+          <div style={styles.logoCircle}>
+            <span style={styles.logoIcon}>🎯</span>
+          </div>
+          <h1 style={styles.title}>HR Interview Portal</h1>
           <p style={styles.subtitle}>
-            {isSignUp ? 'Create your account' : 'Welcome back!'}
+            {!otpSent
+              ? isSignup
+                ? 'Create your HR account'
+                : 'Login to your HR account'
+              : 'Enter the OTP sent to your email'}
           </p>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} style={styles.form}>
-          {isSignUp && (
+          {/* SIGNUP: show full fields before OTP */}
+          {!otpSent && isSignup && (
+            <>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>
+                  Full Name <span style={styles.required}>*</span>
+                </label>
+                <input
+                  type="text"
+                  name="fullName"
+                  value={formData.fullName}
+                  onChange={handleChange}
+                  placeholder="Enter your full name"
+                  style={{
+                    ...styles.input,
+                    ...(errors.fullName ? styles.inputError : {}),
+                  }}
+                  required
+                />
+                {errors.fullName && (
+                  <span style={styles.errorText}>{errors.fullName}</span>
+                )}
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>
+                  Email Address <span style={styles.required}>*</span>
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  placeholder="hr@company.com"
+                  style={{
+                    ...styles.input,
+                    ...(errors.email ? styles.inputError : {}),
+                  }}
+                  required
+                />
+                {errors.email && (
+                  <span style={styles.errorText}>{errors.email}</span>
+                )}
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>
+                  Phone Number <span style={styles.required}>*</span>
+                </label>
+                <input
+                  type="text"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  placeholder="Enter your phone number"
+                  style={{
+                    ...styles.input,
+                    ...(errors.phone ? styles.inputError : {}),
+                  }}
+                  required
+                />
+                {errors.phone && (
+                  <span style={styles.errorText}>{errors.phone}</span>
+                )}
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>
+                  Role <span style={styles.required}>*</span>
+                </label>
+                <select
+                  name="role"
+                  value={formData.role}
+                  onChange={handleChange}
+                  style={{
+                    ...styles.input,
+                    ...(errors.role ? styles.inputError : {}),
+                  }}
+                  required
+                >
+                  <option value="HR">HR</option>
+                  <option value="INTERVIEWER">INTERVIEWER</option>
+                  <option value="CANDIDATE">CANDIDATE</option>
+                </select>
+                {errors.role && (
+                  <span style={styles.errorText}>{errors.role}</span>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* LOGIN: only email before OTP */}
+          {!otpSent && !isSignup && (
             <div style={styles.inputGroup}>
-              <label style={styles.label}>Full Name</label>
+              <label style={styles.label}>
+                Email Address <span style={styles.required}>*</span>
+              </label>
               <input
-                type="text"
-                name="name"
-                value={formData.name}
+                type="email"
+                name="email"
+                value={formData.email}
                 onChange={handleChange}
-                placeholder="Enter your name"
+                placeholder="hr@company.com"
                 style={{
                   ...styles.input,
-                  ...(errors.name ? styles.inputError : {})
+                  ...(errors.email ? styles.inputError : {}),
                 }}
+                required
               />
-              {errors.name && (
-                <span style={styles.errorText}>{errors.name}</span>
+              {errors.email && (
+                <span style={styles.errorText}>{errors.email}</span>
               )}
             </div>
           )}
 
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Email Address</label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              placeholder="Enter your email"
-              style={{
-                ...styles.input,
-                ...(errors.email ? styles.inputError : {})
-              }}
-            />
-            {errors.email && (
-              <span style={styles.errorText}>{errors.email}</span>
-            )}
-          </div>
-
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Password</label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              placeholder="Enter your password"
-              style={{
-                ...styles.input,
-                ...(errors.password ? styles.inputError : {})
-              }}
-            />
-            {errors.password && (
-              <span style={styles.errorText}>{errors.password}</span>
-            )}
-          </div>
-
-          {isSignUp && (
+          {/* OTP FIELD (both modes after Send OTP) */}
+          {otpSent && (
             <div style={styles.inputGroup}>
-              <label style={styles.label}>Confirm Password</label>
+              <label style={styles.label}>
+                OTP Code <span style={styles.required}>*</span>
+              </label>
               <input
-                type="password"
-                name="confirmPassword"
-                value={formData.confirmPassword}
+                type="text"
+                name="otp"
+                value={formData.otp}
                 onChange={handleChange}
-                placeholder="Confirm your password"
+                placeholder="Enter the OTP"
                 style={{
                   ...styles.input,
-                  ...(errors.confirmPassword ? styles.inputError : {})
+                  ...(errors.otp ? styles.inputError : {}),
                 }}
+                required
               />
-              {errors.confirmPassword && (
-                <span style={styles.errorText}>{errors.confirmPassword}</span>
+              {errors.otp && (
+                <span style={styles.errorText}>{errors.otp}</span>
               )}
             </div>
           )}
 
           {errors.submit && (
-            <div style={styles.submitError}>{errors.submit}</div>
+            <div style={styles.submitError}>❌ {errors.submit}</div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              ...styles.submitButton,
-              ...(loading ? styles.buttonDisabled : {})
-            }}
-          >
-            {loading ? '⏳ Loading...' : (isSignUp ? '✅ Sign Up' : '🔐 Sign In')}
+          <button type="submit" disabled={loading} style={styles.submitButton}>
+            {loading
+              ? 'Please wait...'
+              : otpSent
+              ? isSignup
+                ? 'Verify OTP & Create Account'
+                : 'Verify OTP & Login'
+              : 'Send OTP'}
           </button>
+
+          {/* TOGGLE TEXT LINKS UNDER BUTTON */}
+          <div style={{ marginTop: '10px', textAlign: 'center', fontSize: 14 }}>
+            {isSignup ? (
+              <>
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => switchToMode('login')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#667eea',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    padding: 0,
+                  }}
+                >
+                  Login
+                </button>
+              </>
+            ) : (
+              <>
+                New here?{' '}
+                <button
+                  type="button"
+                  onClick={() => switchToMode('signup')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#667eea',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    padding: 0,
+                  }}
+                >
+                  Create account
+                </button>
+              </>
+            )}
+          </div>
         </form>
-
-        {/* Divider */}
-        <div style={styles.divider}>
-          <span style={styles.dividerLine}></span>
-          <span style={styles.dividerText}>OR</span>
-          <span style={styles.dividerLine}></span>
-        </div>
-
-        {/* Guest Access Button */}
-        <button
-          onClick={handleGuestAccess}
-          style={styles.guestButton}
-        >
-          👤 Continue as Guest
-        </button>
-
-        {/* Toggle Sign In/Sign Up */}
-        <div style={styles.toggleContainer}>
-          <p style={styles.toggleText}>
-            {isSignUp ? 'Already have an account?' : "Don't have an account?"}
-            <button
-              type="button"
-              onClick={toggleMode}
-              style={styles.toggleButton}
-            >
-              {isSignUp ? 'Sign In' : 'Sign Up'}
-            </button>
-          </p>
-        </div>
-
-        {/* Guest Info */}
-        <div style={styles.infoBox}>
-          <p style={styles.infoText}>
-            ℹ️ <strong>Guest Access:</strong> Try the platform without creating an account. 
-            Your session data will not be saved.
-          </p>
-        </div>
       </div>
     </div>
   );
 };
-
 const styles = {
   container: {
     minHeight: '100vh',
@@ -281,34 +397,52 @@ const styles = {
     justifyContent: 'center',
     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     padding: '20px',
-    fontFamily: 'Arial, sans-serif'
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
   },
   authBox: {
     backgroundColor: 'white',
-    borderRadius: '12px',
-    padding: '40px',
-    maxWidth: '450px',
+    borderRadius: '16px',
+    padding: '40px 45px',
+    maxWidth: '500px',
     width: '100%',
-    boxShadow: '0 10px 40px rgba(0,0,0,0.2)'
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+    animation: 'fadeIn 0.4s ease-in'
   },
   header: {
     textAlign: 'center',
-    marginBottom: '30px'
+    marginBottom: '25px'
+  },
+  logoCircle: {
+    width: '80px',
+    height: '80px',
+    margin: '0 auto 20px',
+    backgroundColor: '#f0f4ff',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 4px 12px rgba(102, 126, 234, 0.2)'
+  },
+  logoIcon: {
+    fontSize: '40px'
   },
   title: {
     margin: '0 0 10px 0',
-    fontSize: '28px',
-    color: '#333'
+    fontSize: '26px',
+    fontWeight: '700',
+    color: '#1a1a2e',
+    letterSpacing: '-0.5px'
   },
   subtitle: {
     margin: 0,
-    fontSize: '16px',
-    color: '#666'
+    fontSize: '15px',
+    color: '#64748b',
+    fontWeight: '500'
   },
   form: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px'
+    gap: '18px'
   },
   inputGroup: {
     display: 'flex',
@@ -318,108 +452,58 @@ const styles = {
   label: {
     fontSize: '14px',
     fontWeight: '600',
-    color: '#333'
+    color: '#1e293b'
+  },
+  required: {
+    color: '#dc2626',
+    marginLeft: '2px'
   },
   input: {
     padding: '12px 15px',
     fontSize: '15px',
-    border: '2px solid #e0e0e0',
+    border: '2px solid #e2e8f0',
     borderRadius: '8px',
     outline: 'none',
-    transition: 'border-color 0.3s',
+    transition: 'all 0.2s',
+    backgroundColor: '#fff',
+    fontFamily: 'inherit'
   },
   inputError: {
-    borderColor: '#dc3545'
+    borderColor: '#dc2626',
+    backgroundColor: '#fef2f2'
   },
   errorText: {
     fontSize: '12px',
-    color: '#dc3545',
-    marginTop: '4px'
-  },
-  submitError: {
-    padding: '10px',
-    backgroundColor: '#ffebee',
-    color: '#c62828',
-    borderRadius: '6px',
-    fontSize: '14px',
-    textAlign: 'center'
-  },
-  submitButton: {
-    padding: '14px',
-    fontSize: '16px',
-    fontWeight: 'bold',
-    color: 'white',
-    backgroundColor: '#667eea',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'background-color 0.3s',
-    marginTop: '10px'
-  },
-  buttonDisabled: {
-    backgroundColor: '#ccc',
-    cursor: 'not-allowed'
-  },
-  divider: {
+    color: '#dc2626',
+    marginTop: '2px',
     display: 'flex',
     alignItems: 'center',
-    margin: '25px 0',
-    gap: '10px'
+    gap: '4px'
   },
-  dividerLine: {
-    flex: 1,
-    height: '1px',
-    backgroundColor: '#e0e0e0'
-  },
-  dividerText: {
+  submitError: {
+    padding: '12px',
+    backgroundColor: '#fef2f2',
+    color: '#dc2626',
+    borderRadius: '8px',
     fontSize: '14px',
-    color: '#999',
+    textAlign: 'center',
+    border: '1px solid #fecaca',
     fontWeight: '500'
   },
-  guestButton: {
-    width: '100%',
-    padding: '14px',
-    fontSize: '16px',
-    fontWeight: 'bold',
-    color: '#667eea',
-    backgroundColor: '#f0f4ff',
-    border: '2px solid #667eea',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'all 0.3s'
-  },
-  toggleContainer: {
-    marginTop: '20px',
-    textAlign: 'center'
-  },
-  toggleText: {
-    fontSize: '14px',
-    color: '#666',
-    margin: 0
-  },
-  toggleButton: {
-    background: 'none',
-    border: 'none',
-    color: '#667eea',
-    fontWeight: 'bold',
-    fontSize: '14px',
-    cursor: 'pointer',
-    marginLeft: '5px',
-    textDecoration: 'underline'
-  },
-  infoBox: {
-    marginTop: '25px',
+  submitButton: {
     padding: '15px',
-    backgroundColor: '#fff3cd',
-    borderRadius: '8px',
-    border: '1px solid #ffc107'
-  },
-  infoText: {
-    margin: 0,
-    fontSize: '13px',
-    color: '#856404',
-    lineHeight: '1.5'
+    fontSize: '16px',
+    fontWeight: '700',
+    color: 'white',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    border: 'none',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    transition: 'all 0.3s ease',
+    marginTop: '10px',
+    boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)',
+    letterSpacing: '0.3px'
   }
 };
 
-export default AuthPage;
+export default HRAuthPage;

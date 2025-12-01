@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'rea
 import RoomSelection from './components/RoomSelection';
 import CandidateView from './components/CandidateView';
 import InterviewerView from './components/InterviewerView';
+import HRAuthPage from './components/SignInPage';
+import CalendarView from './components/CalendarView';
 
 // Wrapper for CandidateView to extract roomId from URL
 const CandidateViewWrapper = () => {
@@ -29,8 +31,11 @@ function App() {
     <Router>
       <Routes>
         {/* Room Selection Page - Default landing (NO AUTH REQUIRED) */}
+        <Route path="/auth" element={<HRAuthPage />} />
         <Route path="/" element={<RoomSelection />} />
         <Route path="/interview" element={<RoomSelection />} />
+          <Route path="/calendar-view" element={<CalendarView />} />
+
         
         {/* Candidate Interview Page */}
         <Route 
