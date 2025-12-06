@@ -3,6 +3,8 @@ import Webcam from 'react-webcam';
 import io from 'socket.io-client';
 import { SIGNALING_SERVER, iceServers } from '../utils/config';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
+// import TranscriptSaver from './TranscriptSaver';
+
 
 const CandidateView = ({ roomId, userName: propUserName }) => {
   // ==================== PERSIST STATE KEY ====================
@@ -54,8 +56,8 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
   const [detectionMethod, setDetectionMethod] = useState('');
 
   // Pause Detection States
-  const [lastSpeechTime, setLastSpeechTime] = useState(Date.now());
-  const [secondsSinceLastSpeech, setSecondsSinceLastSpeech] = useState(0);
+  // const [lastSpeechTime, setSecondsSinceLastSpeech] = useState(Date.now());
+  // const [secondsSinceLastSpeech, setSecondsSinceLastSpeech] = useState(0);
 
   // Refs
   const webcamRef = useRef(null);
@@ -67,10 +69,13 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
   const webgazerInitialized = useRef(false);
   const cleanupExecuted = useRef(false);
   const isLookingAwayRef = useRef(false);
-  const pauseTimerRef = useRef(null);
+  // const pauseTimerRef = useRef(null);
   const lastTranscriptRef = useRef('');
-  const PAUSE_THRESHOLD = 10000;
+  // const PAUSE_THRESHOLD = 10000;
   const speechStartedRef = useRef(false);  // ✅ ADD THIS LINE
+
+  const batchTimerRef = useRef(null);
+
 
 
   // Speech Recognition Hook
@@ -88,7 +93,7 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
     { x: 90, y: 90 }
   ];
 
-  const proxyUrl = 'http://localhost:5000/api/ai-detect';
+  const proxyUrl = 'http://localhost:5000/api/auth/ai-detect';
   const model = 'roberta-base-openai-detector';
 
   // ==================== SAVE STATE TO LOCALSTORAGE ====================
@@ -165,26 +170,26 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
 
 // ==================== LOG SPEECH STATUS TO CONSOLE ====================
 
-useEffect(() => {
-  if (!listening || !transcript) return;
+// useEffect(() => {
+//   if (!listening || !transcript) return;
   
-  const wordCount = transcript.trim().split(/\s+/).length;
+//   const wordCount = transcript.trim().split(/\s+/).length;
   
-  console.log('🎤 Recording:', wordCount, 'words');
-  console.log('⏱️ Pause:', secondsSinceLastSpeech, 's / 10s');
+//   console.log('🎤 Recording:', wordCount, 'words');
+//   // console.log('⏱️ Pause:', secondsSinceLastSpeech, 's / 10s');
   
-  if (isAnalyzing) {
-    console.log('⏳ Analyzing answer...');
-  } else if (secondsSinceLastSpeech >= 10) {
-    console.log('🔍 Will analyze soon...');
-  }
+//   if (isAnalyzing) {
+//     console.log('⏳ Analyzing answer...');
+//   } else if (secondsSinceLastSpeech >= 10) {
+//     console.log('🔍 Will analyze soon...');
+//   }
   
-  if (aiDetectionScore !== null) {
-    console.log('📊 Last AI Detection Score:', aiDetectionScore + '%');
-    console.log('🔧 Detection Method:', detectionMethod);
-  }
+//   if (aiDetectionScore !== null) {
+//     console.log('📊 Last AI Detection Score:', aiDetectionScore + '%');
+//     console.log('🔧 Detection Method:', detectionMethod);
+//   }
   
-}, [listening, transcript, secondsSinceLastSpeech, isAnalyzing, aiDetectionScore, detectionMethod]);
+// }, [listening, transcript, secondsSinceLastSpeech, isAnalyzing, aiDetectionScore, detectionMethod]);
 
 
   // ==================== INITIALIZE CONNECTION (RUNS ON MEETING STEP) ====================
@@ -220,48 +225,76 @@ useEffect(() => {
 
   // ==================== PAUSE DETECTION ====================
   
-  useEffect(() => {
-    if (!listening || !transcript) return;
+  // useEffect(() => {
+  //   if (!listening || !transcript) return;
 
-    if (pauseTimerRef.current) {
-      clearTimeout(pauseTimerRef.current);
-    }
+  //   if (pauseTimerRef.current) {
+  //     clearTimeout(pauseTimerRef.current);
+  //   }
 
-    if (transcript !== lastTranscriptRef.current && transcript.trim().length > 0) {
-      lastTranscriptRef.current = transcript;
-      setLastSpeechTime(Date.now());
+  //   if (transcript !== lastTranscriptRef.current && transcript.trim().length > 0) {
+  //     lastTranscriptRef.current = transcript;
+  //     setLastSpeechTime(Date.now());
 
-      pauseTimerRef.current = setTimeout(() => {
-        const wordCount = transcript.trim().split(/\s+/).length;
+  //     pauseTimerRef.current = setTimeout(() => {
+  //       const wordCount = transcript.trim().split(/\s+/).length;
         
-        if (wordCount >= 5) {
-          console.log(`🔍 10-second pause detected. Analyzing ${wordCount} words...`);
-          const textToAnalyze = transcript.trim();
-          analyzeTextWithAI(textToAnalyze);
-          resetTranscript();
-          lastTranscriptRef.current = '';
-          setSecondsSinceLastSpeech(0);
-        }
-      }, PAUSE_THRESHOLD);
-    }
+  //       if (wordCount >= 5) {
+  //         console.log(`🔍 10-second pause detected. Analyzing ${wordCount} words...`);
+  //         const textToAnalyze = transcript.trim();
+  //         analyzeTextWithAI(textToAnalyze);
+  //         resetTranscript();
+  //         lastTranscriptRef.current = '';
+  //         setSecondsSinceLastSpeech(0);
+  //       }
+  //     }, PAUSE_THRESHOLD);
+  //   }
 
-    return () => {
-      if (pauseTimerRef.current) {
-        clearTimeout(pauseTimerRef.current);
-      }
-    };
-  }, [transcript, listening]);
+  //   return () => {
+  //     if (pauseTimerRef.current) {
+  //       clearTimeout(pauseTimerRef.current);
+  //     }
+  //   };
+  // }, [transcript, listening]);
+
+  // useEffect(() => {
+  //   if (!listening) return;
+    
+  //   const interval = setInterval(() => {
+  //     const elapsed = Math.floor((Date.now() - lastSpeechTime) / 1000);
+  //     setSecondsSinceLastSpeech(elapsed);
+  //   }, 1000);
+    
+  //   return () => clearInterval(interval);
+  // }, [listening, lastSpeechTime]);
+
 
   useEffect(() => {
-    if (!listening) return;
-    
-    const interval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - lastSpeechTime) / 1000);
-      setSecondsSinceLastSpeech(elapsed);
-    }, 1000);
-    
-    return () => clearInterval(interval);
-  }, [listening, lastSpeechTime]);
+  if (!listening) return;
+
+  // Get interval from .env (fallback to 3 minutes)
+  const intervalMinutes = parseInt(process.env.REACT_APP_SPEECH_SAVE_INTERVAL_MINUTES || '3');
+  const BATCH_DURATION = intervalMinutes * 60 * 1000; // Convert to ms
+
+  // Start a fresh timer
+  if (batchTimerRef.current) clearInterval(batchTimerRef.current);
+
+  batchTimerRef.current = setInterval(() => {
+    const spoken = transcript.trim();
+
+    if (spoken.length > 0) {
+      console.log(`⏱️ ${intervalMinutes}-minute batch saving:`, spoken);
+
+      analyzeTextWithAI(spoken);   // save & analyze
+      resetTranscript();           // clear speech buffer
+    }
+  }, BATCH_DURATION);
+
+  return () => {
+    if (batchTimerRef.current) clearInterval(batchTimerRef.current);
+  };
+}, [listening, transcript]);
+
 
   // ==================== FIX VIDEO VISIBILITY ====================
 
@@ -302,8 +335,7 @@ useEffect(() => {
   }, []);
 
   //===================== save the answers to db ==============
-
-  const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCount, aiScore, detectionMethod, modelUsed }) => {
+const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCount, aiScore, detectionMethod, modelUsed }) => {
   try {
     const response = await fetch('http://localhost:5000/api/auth/answers/save', {
       method: 'POST',
@@ -323,6 +355,24 @@ useEffect(() => {
 
     if (response.ok) {
       console.log('💾 Answer saved to DB with ID:', data.answerId);
+      
+      // ✅ GENERATE COMBINED TRANSCRIPT
+      try {
+        const transcriptRes = await fetch('http://localhost:5000/api/conversation/generate-transcript', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId })
+        });
+        
+        const transcriptData = await transcriptRes.json();
+        if (transcriptRes.ok) {
+          console.log('📝 Combined transcript updated:', transcriptData.message);
+        } else {
+          console.warn('⚠️ Transcript generation failed:', transcriptData.error);
+        }
+      } catch (transcriptErr) {
+        console.error('❌ Transcript generation error:', transcriptErr);
+      }
     } else {
       console.error('❌ Failed to save answer:', data.error);
     }
@@ -330,6 +380,7 @@ useEffect(() => {
     console.error('❌ Network error saving answer:', error);
   }
 };
+
 
 
   // ==================== STEP 1: NAME ENTRY ====================
@@ -588,8 +639,8 @@ useEffect(() => {
     setTranscribedText('');
     setAiDetectionScore(null);
     setDetectionMethod('');
-    setLastSpeechTime(Date.now());
-    setSecondsSinceLastSpeech(0);
+    // setLastSpeechTime(Date.now());
+    // setSecondsSinceLastSpeech(0);
     
     SpeechRecognition.startListening({ 
       continuous: true,
@@ -864,7 +915,7 @@ const analyzeTextWithAI = async (text) => {
   const cleanupConnection = () => {
     console.log('🧹 Cleaning up...');
     
-    if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current);
+    // if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current);
     if (lookAwayTimerRef.current) clearTimeout(lookAwayTimerRef.current);
     if (listening) SpeechRecognition.stopListening();
     if (peerConnectionRef.current) peerConnectionRef.current.close();
@@ -1151,6 +1202,8 @@ const analyzeTextWithAI = async (text) => {
         
         button:hover { transform: translateY(-2px); transition: all 0.3s ease; }
       `}</style>
+       {/* Transcript saving helper */}
+    {/* {currentStep === 'meeting' && <TranscriptSaver roomId={roomId} senderRole="candidate" />} */}
     </div>
   );
 };

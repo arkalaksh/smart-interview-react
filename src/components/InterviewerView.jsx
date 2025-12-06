@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import { SIGNALING_SERVER, iceServers } from '../utils/config';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
-
+// import TranscriptSaver from './TranscriptSaver';
 // ---------- Helpers for localStorage persistence (optional) ----------
 const loadState = (key, defaultValue) => {
   try {
@@ -144,34 +144,29 @@ const startSpeechRecognition = () => {
   console.log('🎤 Interviewer speech recognition started');
 };
 
-//. Pause Detection Logic
+
+// 🔁 Every 3 minutes, save transcript chunk automatically
 useEffect(() => {
-  if (!listening || !transcript) return;
+  if (!listening) return;
 
-  if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current);
+  const intervalMinutes = parseInt(process.env.REACT_APP_SPEECH_SAVE_INTERVAL_MINUTES || '3');
+  const intervalMs = intervalMinutes * 60 * 1000;
 
-  if (transcript !== lastTranscriptRef.current && transcript.trim().length > 0) {
-    lastTranscriptRef.current = transcript;
-    setLastSpeechTime(Date.now());
+  const interval = setInterval(() => {
+    const textChunk = transcript.trim();
 
-    pauseTimerRef.current = setTimeout(() => {
-      const wordCount = transcript.trim().split(/\s+/).length;
-      if (wordCount >= 3) { // Minimal words for question
-        console.log(`🔍 10s pause detected. Saving question with ${wordCount} words.`);
+    if (textChunk.length > 0) {
+      console.log(`⏳ ${intervalMinutes} min chunk detected. Saving to DB...`);
+      saveInterviewerQuestion(textChunk);
 
-        saveInterviewerQuestion(transcript.trim());
+      resetTranscript();
+      lastTranscriptRef.current = '';
+    }
+  }, intervalMs); // Uses .env value
 
-        resetTranscript();
-        lastTranscriptRef.current = '';
-        setSecondsSinceLastSpeech(0);
-      }
-    }, PAUSE_THRESHOLD);
-  }
+  return () => clearInterval(interval);
+}, [listening, transcript]);
 
-  return () => {
-    if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current);
-  };
-}, [transcript, listening]);
 
 //. Increment Seconds Since Last Speech
 useEffect(() => {
@@ -216,15 +211,28 @@ const saveInterviewerQuestion = async (questionText) => {
     const data = await response.json();
     if (response.ok) {
       console.log('❓ Question saved:', data.questionId);
-    } else {
-      console.error('❌ Failed to save question:', data.error);
+      
+      // ✅ AUTO-GENERATE COMBINED TRANSCRIPT
+      // In saveInterviewerQuestion & saveAnswerToDatabase - ADD console.log
+await fetch('http://localhost:5000/api/conversation/generate-transcript', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ roomId })
+}).then(res => {
+  console.log('✅ Transcript API Response:', res.status, res.ok);
+  return res.json();
+}).then(data => {
+  console.log('📝 Transcript API Data:', data);
+}).catch(err => {
+  console.error('❌ Transcript API Error:', err);
+});
+
+      console.log('📝 Full transcript updated');
     }
   } catch (error) {
     console.error('❌ Network error saving question:', error);
   }
 };
-
-
 
 
   // ---------- Initialize socket + media ----------
@@ -690,6 +698,8 @@ const saveInterviewerQuestion = async (questionText) => {
           )}
         </div>
       </div>
+          {/* Add TranscriptSaver here */}
+    {/* {step === 'meeting' && <TranscriptSaver roomId={roomId} senderRole="interviewer" />} */}
 
       <style>{`
         button:hover {
