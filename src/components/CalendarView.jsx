@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react'; 
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import './Calendar.css';
@@ -19,7 +19,9 @@ const CalendarView = () => {
 
     const fetchInterviews = async () => {
       try {
-        const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/user/${userId}`);
+        const response = await fetch(
+          `http://localhost:5000/api/auth/interview-rooms/user/${userId}`
+        );
         if (!response.ok) throw new Error('Failed to fetch interviews');
         const data = await response.json();
 
@@ -31,20 +33,49 @@ const CalendarView = () => {
     };
 
     fetchInterviews();
-  }, []); // empty deps array to run once on mount
+  }, []); // run once on mount
 
   const interviewsOnDate =
     Array.isArray(interviews) && selectedDate
       ? interviews.filter(
-          (i) => new Date(i.scheduled_date).toDateString() === selectedDate.toDateString()
+          (i) =>
+            new Date(i.scheduled_date).toDateString() ===
+            selectedDate.toDateString()
         )
       : [];
 
   const hasInterviewForDate = (date) =>
     Array.isArray(interviews) &&
     interviews.some(
-      (i) => new Date(i.scheduled_date).toDateString() === date.toDateString()
+      (i) =>
+        new Date(i.scheduled_date).toDateString() === date.toDateString()
     );
+
+  // NEW: View result handler
+  const handleViewResult = async (roomId) => {
+    try {
+      const res = await fetch(
+        `http://localhost:5000/api/auth/interviews/${roomId}/details`
+      );
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.error || 'Failed to load interview details');
+        return;
+      }
+
+      const { room, questions, answers } = data;
+      alert(
+        `Candidate: ${room.candidate_name || 'Unknown'}\n` +
+          `Interviewer: ${room.interviewer_name || 'Unknown'}\n` +
+          `Questions: ${questions.length}\n` +
+          `Answers: ${answers.length}\n` +
+          `Status: ${room.status}`
+      );
+    } catch (e) {
+      console.error(e);
+      alert('Error loading interview details');
+    }
+  };
 
   return (
     <div className="page-center-wrapper">
@@ -90,6 +121,18 @@ const CalendarView = () => {
                       Interviewer
                     </a>
                   </div>
+
+                  {/* NEW: status / result */}
+                  {i.status === 'COMPLETED' ? (
+                    <button
+                      className="view-result-btn"
+                      onClick={() => handleViewResult(i.room_id)}
+                    >
+                      View result
+                    </button>
+                  ) : (
+                    <span className="status-chip">{i.status}</span>
+                  )}
                 </div>
               ))
             )}

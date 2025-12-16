@@ -111,6 +111,33 @@ const handleSaveToDatabase = async () => {
   }
 };
 
+// ✅ Logout handler
+  const handleLogout = async () => {
+    try {
+      await fetch('http://localhost:5000/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (e) {
+      // ignore network error on logout
+    } finally {
+      localStorage.removeItem('user');
+      localStorage.removeItem('scheduledInterviews'); // optional
+      navigate('/login'); // or '/'
+    }
+  };
+
+  // Check if user is valid
+  if (!userId || !userName) {
+    alert('User not authenticated or user data missing. Please login again.');
+    navigate('/login');
+    return null;
+  }
+
+  // Then use userId and userName anywhere, for example:
+  console.log('User ID:', userId);
+  console.log('User Name:', userName);
+
 // Fetches saved interviews, stores them, and navigates to calendar view
 const handleViewInCalendar = async () => {
   // First save interview; if fails, do not proceed
@@ -308,9 +335,15 @@ const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/use
 <h1 style={styles.welcomeTitle}>
   Welcome back, {userName?.split(' ')[0] || 'Guest'}
 </h1>
-
+ </div>
+           
+            <button onClick={handleLogout} style={styles.logoutButton}>
+              Logout
+            </button>
           </div>
-        </div>
+    
+         
+      
 
         <div style={styles.cardGrid}>
           <div style={styles.primaryCard} onClick={handleCreateNewRoom}>
@@ -394,12 +427,25 @@ const styles = {
     padding: '40px 40px 30px',
     borderBottom: '1px solid #e9ecef'
   },
+
   welcomeTitle: {
     fontSize: '32px',
     fontWeight: '700',
     color: '#1a1a2e',
     margin: '0 0 8px 0'
   },
+    logoutButton: {
+    marginLeft: '12px',
+    padding: '8px 16px',
+    backgroundColor: '#f03e3e',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+
   welcomeSubtitle: {
     fontSize: '16px',
     color: '#6c757d',

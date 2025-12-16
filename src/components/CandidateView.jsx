@@ -167,7 +167,6 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
     initWebGazer();
     
   }, [currentStep, calibrationCompleted]);
-
 // ==================== LOG SPEECH STATUS TO CONSOLE ====================
 
 // useEffect(() => {
@@ -190,10 +189,7 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
 //   }
   
 // }, [listening, transcript, secondsSinceLastSpeech, isAnalyzing, aiDetectionScore, detectionMethod]);
-
-
-  // ==================== INITIALIZE CONNECTION (RUNS ON MEETING STEP) ====================
-  
+  // ==================== INITIALIZE CONNECTION (RUNS ON MEETING STEP) ==================== 
   useEffect(() => {
     if (currentStep !== 'meeting') return;
     
@@ -210,9 +206,7 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
       cleanupConnection();
     };
   }, [currentStep]);
-
   // ==================== AUTO-START SPEECH RECOGNITION ====================
-  
   useEffect(() => {
     if (currentStep === 'meeting' && browserSupportsSpeechRecognition && !speechStartedRef.current) {
       console.log('✅ Auto-starting speech recognition...');
@@ -222,7 +216,6 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
       }, 2000); // Wait 2 seconds after entering meeting
     }
   }, [currentStep, browserSupportsSpeechRecognition]);
-
   // ==================== PAUSE DETECTION ====================
   
   // useEffect(() => {
@@ -267,8 +260,6 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
     
   //   return () => clearInterval(interval);
   // }, [listening, lastSpeechTime]);
-
-
   useEffect(() => {
   if (!listening) return;
 
@@ -294,10 +285,7 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
     if (batchTimerRef.current) clearInterval(batchTimerRef.current);
   };
 }, [listening, transcript]);
-
-
   // ==================== FIX VIDEO VISIBILITY ====================
-
   useEffect(() => {
     if (currentStep !== 'meeting') return;
     
@@ -323,8 +311,7 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
     return () => clearInterval(interval);
   }, [currentStep]);
 
-  // ==================== CLEANUP ON UNMOUNT ====================
-  
+  // ==================== CLEANUP ON UNMOUNT ==================== 
   useEffect(() => {
     return () => {
       if (!cleanupExecuted.current) {
@@ -333,7 +320,6 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
       }
     };
   }, []);
-
   //===================== save the answers to db ==============
 const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCount, aiScore, detectionMethod, modelUsed }) => {
   try {
@@ -350,7 +336,6 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
         modelUsed
       })
     });
-
     const data = await response.json();
 
     if (response.ok) {
@@ -380,18 +365,13 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
     console.error('❌ Network error saving answer:', error);
   }
 };
-
-
-
   // ==================== STEP 1: NAME ENTRY ====================
  const handleNameSubmit = async () => {
   if (!candidateName.trim()) {
     alert('Please enter your name');
     return;
   }
-  
   console.log('✅ Name entered:', candidateName);
-  
   // 🚀 Save candidate name to database
   try {
     const response = await fetch('http://localhost:5000/api/auth/rooms/update-candidate-name', {
@@ -415,10 +395,7 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
   console.log('➡️ Moving to calibration');
   setCurrentStep('calibration');
 };
-
-
   // ==================== STEP 2: WEBGAZER & CALIBRATION ====================
-
   const loadWebGazer = () => {
     console.log('👁️ Loading WebGazer...');
     
@@ -454,7 +431,6 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
       document.body.appendChild(script);
     });
   };
-
   const startCalibration = async () => {
     console.log('🎯 ========== STARTING CALIBRATION ==========');
     
@@ -501,7 +477,6 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
       alert('Calibration failed. Allow camera access and try again.');
     }
   };
-
   const waitForFaceDetection = () => {
     return new Promise((resolve, reject) => {
       let attempts = 0;
@@ -518,7 +493,6 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
       }, 200);
     });
   };
-
   const handleCalibrationClick = async (point, index) => {
     if (!window.webgazer || calibrationStep !== index) return;
     
@@ -540,7 +514,6 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
       await finishCalibration();
     }
   };
-
   const finishCalibration = async () => {
     console.log('🏁 Finishing calibration...');
     
@@ -565,7 +538,6 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
     
     setupGazeTracking();
   };
-
   const setupGazeTracking = () => {
     console.log('👁️ Setting up gaze tracking...');
     
@@ -596,7 +568,6 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
       }
     });
   };
-
   const checkGazePosition = (x, y) => {
     const margin = 200;
     const isOnScreen = x > -margin && x < window.innerWidth + margin && 
@@ -626,7 +597,6 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
   };
 
   // ==================== [KEEP ALL YOUR OTHER FUNCTIONS THE SAME] ====================
-  
   const startSpeechRecognition = () => {
     if (!browserSupportsSpeechRecognition) {
       console.error('❌ Browser does not support speech recognition');
@@ -648,7 +618,6 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
       interimResults: true
     });
   };
-
   const stopSpeechRecognition = async () => {
     console.log('🛑 Stopping speech recognition');
     SpeechRecognition.stopListening();
@@ -659,7 +628,6 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
       await analyzeTextWithAI(transcript);
     }
   };
-
   const analyzeTextRuleBased = (text) => {
     const textLower = text.toLowerCase();
     const words = text.split(/\s+/);
@@ -698,7 +666,6 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
     
     return Math.max(0, Math.min(100, score));
   };
-
 const analyzeTextWithAI = async (text) => {
   if (!text || text.trim().length < 10) return;
 
@@ -720,7 +687,6 @@ const analyzeTextWithAI = async (text) => {
       detectionMethod = "Rule-based Algorithm";
       modelUsed = "Local Pattern Matching";
     }
-
     // Save answer and AI results to the database
     await saveAnswerToDatabase({
       roomId,
@@ -755,11 +721,8 @@ const analyzeTextWithAI = async (text) => {
   } catch (error) {
     console.log('⚠️ API unavailable, using rule-based');
   }
-
   setIsAnalyzing(false);
 };
-
-
   const tryHuggingFaceAPI = async (text) => {
     try {
       const response = await fetch(proxyUrl, {
@@ -774,7 +737,6 @@ const analyzeTextWithAI = async (text) => {
       return null;
     }
   };
-
   const setupTabDetection = () => {
     const handler = () => {
       if (document.hidden) {
@@ -790,7 +752,6 @@ const analyzeTextWithAI = async (text) => {
     document.addEventListener('visibilitychange', handler);
     return () => document.removeEventListener('visibilitychange', handler);
   };
-
   const sendAlert = (alertData) => {
     if (!socketRef.current?.connected) {
       console.error('❌ Socket not connected');
@@ -804,7 +765,6 @@ const analyzeTextWithAI = async (text) => {
       console.error('❌ Error sending alert:', error);
     }
   };
-
   const initializeConnection = async () => {
     console.log('🔌 Initializing connection...');
     
@@ -857,7 +817,6 @@ const analyzeTextWithAI = async (text) => {
       setConnectionStatus('Error: ' + error.message);
     }
   };
-
   const createPeerConnection = (peerId) => {
     if (peerConnectionRef.current) return peerConnectionRef.current;
     
@@ -882,7 +841,6 @@ const analyzeTextWithAI = async (text) => {
     
     return pc;
   };
-
   const handleOffer = async (data) => {
     console.log('📨 Received offer');
     const pc = createPeerConnection(data.senderId);
@@ -900,7 +858,6 @@ const analyzeTextWithAI = async (text) => {
       console.error('❌ Offer error:', error);
     }
   };
-
   const handleIceCandidate = async (data) => {
     const pc = peerConnectionRef.current;
     if (pc?.remoteDescription) {
@@ -911,7 +868,6 @@ const analyzeTextWithAI = async (text) => {
       }
     }
   };
-
   const cleanupConnection = () => {
     console.log('🧹 Cleaning up...');
     
@@ -922,7 +878,6 @@ const analyzeTextWithAI = async (text) => {
     if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
     if (socketRef.current) socketRef.current.disconnect();
   };
-
   const cleanupWebGazer = () => {
     if (window.webgazer) {
       try {
@@ -931,9 +886,7 @@ const analyzeTextWithAI = async (text) => {
       } catch (e) {}
     }
   };
-
   // ==================== ADD RESET BUTTON (OPTIONAL) ====================
-  
   const handleResetCalibration = () => {
     if (window.confirm('Reset calibration? You will need to calibrate again.')) {
       console.log('🔄 Resetting calibration...');
@@ -942,9 +895,7 @@ const analyzeTextWithAI = async (text) => {
       localStorage.removeItem(STORAGE_KEY);
     }
   };
-
   // ==================== RENDER ====================
-
   // STEP 1: NAME ENTRY
   if (currentStep === 'name') {
     return (
@@ -1030,7 +981,6 @@ const analyzeTextWithAI = async (text) => {
       </div>
     );
   }
-
   // STEP 2: CALIBRATION
   if (currentStep === 'calibration' && !calibrationCompleted) {
     return (
@@ -1062,7 +1012,6 @@ const analyzeTextWithAI = async (text) => {
       </div>
     );
   }
-
   // STEP 3: MEETING
   return (
     <div style={{ padding: '20px', fontFamily: 'Arial', backgroundColor: '#f5f5f5', minHeight: '100vh' }}>
@@ -1079,7 +1028,6 @@ const analyzeTextWithAI = async (text) => {
         Socket: {socketRef.current?.connected ? '✅ Connected' : '❌ Disconnected'}
         {listening && ` | 🎤 ${transcript.split(' ').length} words`}
       </div> */}
-
       {/* ✅ OPTIONAL: Reset Calibration Button */}
       {calibrationCompleted && (
         <button
@@ -1102,7 +1050,6 @@ const analyzeTextWithAI = async (text) => {
           🔄 Reset Calibration
         </button>
       )}
-
       {/* Speech Status */}
       {/* {listening && transcript && (
         <div style={{
@@ -1142,7 +1089,6 @@ const analyzeTextWithAI = async (text) => {
           )}
         </div>
       )} */}
-
       {/* VIDEO GRID */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', maxWidth: '1400px', margin: '0 auto' }}>
         
@@ -1159,7 +1105,6 @@ const analyzeTextWithAI = async (text) => {
             Interviewer
           </div>
         </div>
-
         {/* Candidate Video */}
         <div style={{ 
           backgroundColor: '#000', 
@@ -1182,9 +1127,7 @@ const analyzeTextWithAI = async (text) => {
             👁️ Eye Tracking {calibrationCompleted ? 'Active (Persisted)' : 'Active'}
           </div>
         </div>
-        
       </div>
-
       <style>{`
         #webgazerVideoFeed, 
         #webgazerVideoContainer, 
@@ -1193,13 +1136,12 @@ const analyzeTextWithAI = async (text) => {
           display: none !important; 
           visibility: hidden !important;
         }
-        
         #interviewer-remote-video,
         #candidate-local-video {
           display: block !important;
           visibility: visible !important;
         }
-        
+
         button:hover { transform: translateY(-2px); transition: all 0.3s ease; }
       `}</style>
        {/* Transcript saving helper */}
@@ -1207,5 +1149,4 @@ const analyzeTextWithAI = async (text) => {
     </div>
   );
 };
-
 export default CandidateView;

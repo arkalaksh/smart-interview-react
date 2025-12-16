@@ -1,8 +1,8 @@
+// components/HRSignupPage.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const HRAuthPage = () => {
-  const [mode, setMode] = useState('signup'); // 'signup' or 'login'
+const HRSignupPage = () => {
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -17,29 +17,22 @@ const HRAuthPage = () => {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
     }));
     if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+      setErrors((prev) => ({ ...prev, [name]: '' }));
     }
   };
 
-  // For SIGNUP: need full details
+  // SIGNUP validations (same as before)
   const validateRequestOtpSignup = () => {
     let errs = {};
     if (!formData.email.trim()) errs.email = 'Email is required';
     if (!formData.fullName.trim()) errs.fullName = 'Full name is required';
     if (!formData.phone.trim()) errs.phone = 'Phone number is required';
     if (!formData.role) errs.role = 'Role is required';
-    return errs;
-  };
-
-  // For LOGIN: only email
-  const validateRequestOtpLogin = () => {
-    let errs = {};
-    if (!formData.email.trim()) errs.email = 'Email is required';
     return errs;
   };
 
@@ -51,8 +44,7 @@ const HRAuthPage = () => {
   };
 
   const requestOtp = async () => {
-    const errs =
-      mode === 'signup' ? validateRequestOtpSignup() : validateRequestOtpLogin();
+    const errs = validateRequestOtpSignup();
     if (Object.keys(errs).length) {
       setErrors(errs);
       return false;
@@ -60,22 +52,14 @@ const HRAuthPage = () => {
 
     setLoading(true);
     try {
-      const url =
-        mode === 'signup'
-          ? 'http://localhost:5000/api/auth/register'
-          : 'http://localhost:5000/api/auth/login-request-otp'; // <-- create this login endpoint
+      const url = 'http://localhost:5000/api/auth/register';
 
-      const body =
-        mode === 'signup'
-          ? {
-              email: formData.email,
-              name: formData.fullName,
-              phone: formData.phone,
-              role: formData.role,
-            }
-          : {
-              email: formData.email,
-            };
+      const body = {
+        email: formData.email,
+        name: formData.fullName,
+        phone: formData.phone,
+        role: formData.role,
+      };
 
       const response = await fetch(url, {
         method: 'POST',
@@ -97,6 +81,7 @@ const HRAuthPage = () => {
     }
     return true;
   };
+
   const verifyOtp = async () => {
     const errs = validateVerifyOtp();
     if (Object.keys(errs).length) {
@@ -105,24 +90,15 @@ const HRAuthPage = () => {
     }
     setLoading(true);
     try {
-      const url =
-        mode === 'signup'
-          ? 'http://localhost:5000/api/auth/verify-otp'   // verify and create account
-          : 'http://localhost:5000/api/auth/login-verify-otp'; // <-- login verify endpoint
+      const url = 'http://localhost:5000/api/auth/verify-otp';
 
-      const body =
-        mode === 'signup'
-          ? {
-              email: formData.email,
-              otp: formData.otp,
-              name: formData.fullName,
-              phone: formData.phone,
-              role: formData.role,
-            }
-          : {
-              email: formData.email,
-              otp: formData.otp,
-            };
+      const body = {
+        email: formData.email,
+        otp: formData.otp,
+        name: formData.fullName,
+        phone: formData.phone,
+        role: formData.role,
+      };
 
       const response = await fetch(url, {
         method: 'POST',
@@ -158,21 +134,6 @@ const HRAuthPage = () => {
     }
   };
 
-  const switchToMode = (newMode) => {
-    setMode(newMode);
-    setFormData({
-      fullName: '',
-      email: '',
-      phone: '',
-      role: 'HR',
-      otp: '',
-    });
-    setErrors({});
-    setOtpSent(false);
-  };
-
-  const isSignup = mode === 'signup';
-
   return (
     <div style={styles.container}>
       <div style={styles.authBox}>
@@ -183,16 +144,14 @@ const HRAuthPage = () => {
           <h1 style={styles.title}>HR Interview Portal</h1>
           <p style={styles.subtitle}>
             {!otpSent
-              ? isSignup
-                ? 'Create your HR account'
-                : 'Login to your HR account'
+              ? 'Create your HR account'
               : 'Enter the OTP sent to your email'}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} style={styles.form}>
-          {/* SIGNUP: show full fields before OTP */}
-          {!otpSent && isSignup && (
+          {/* SIGNUP fields */}
+          {!otpSent && (
             <>
               <div style={styles.inputGroup}>
                 <label style={styles.label}>
@@ -282,31 +241,7 @@ const HRAuthPage = () => {
             </>
           )}
 
-          {/* LOGIN: only email before OTP */}
-          {!otpSent && !isSignup && (
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>
-                Email Address <span style={styles.required}>*</span>
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                placeholder="hr@company.com"
-                style={{
-                  ...styles.input,
-                  ...(errors.email ? styles.inputError : {}),
-                }}
-                required
-              />
-              {errors.email && (
-                <span style={styles.errorText}>{errors.email}</span>
-              )}
-            </div>
-          )}
-
-          {/* OTP FIELD (both modes after Send OTP) */}
+          {/* OTP after Send OTP */}
           {otpSent && (
             <div style={styles.inputGroup}>
               <label style={styles.label}>
@@ -338,57 +273,35 @@ const HRAuthPage = () => {
             {loading
               ? 'Please wait...'
               : otpSent
-              ? isSignup
-                ? 'Verify OTP & Create Account'
-                : 'Verify OTP & Login'
+              ? 'Verify OTP & Create Account'
               : 'Send OTP'}
           </button>
 
-          {/* TOGGLE TEXT LINKS UNDER BUTTON */}
+          {/* Text link -> Login page */}
           <div style={{ marginTop: '10px', textAlign: 'center', fontSize: 14 }}>
-            {isSignup ? (
-              <>
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => switchToMode('login')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#667eea',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    padding: 0,
-                  }}
-                >
-                  Login
-                </button>
-              </>
-            ) : (
-              <>
-                New here?{' '}
-                <button
-                  type="button"
-                  onClick={() => switchToMode('signup')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#667eea',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    padding: 0,
-                  }}
-                >
-                  Create account
-                </button>
-              </>
-            )}
+            Already have an account?{' '}
+            <button
+              type="button"
+              onClick={() => navigate('/login')}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#667eea',
+                cursor: 'pointer',
+                fontWeight: 600,
+                padding: 0,
+              }}
+            >
+              Login
+            </button>
           </div>
         </form>
       </div>
     </div>
   );
 };
+
+// same styles object reused
 const styles = {
   container: {
     minHeight: '100vh',
@@ -397,7 +310,8 @@ const styles = {
     justifyContent: 'center',
     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
     padding: '20px',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+    fontFamily:
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   },
   authBox: {
     backgroundColor: 'white',
@@ -406,11 +320,11 @@ const styles = {
     maxWidth: '500px',
     width: '100%',
     boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-    animation: 'fadeIn 0.4s ease-in'
+    animation: 'fadeIn 0.4s ease-in',
   },
   header: {
     textAlign: 'center',
-    marginBottom: '25px'
+    marginBottom: '25px',
   },
   logoCircle: {
     width: '80px',
@@ -421,42 +335,42 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 4px 12px rgba(102, 126, 234, 0.2)'
+    boxShadow: '0 4px 12px rgba(102, 126, 234, 0.2)',
   },
   logoIcon: {
-    fontSize: '40px'
+    fontSize: '40px',
   },
   title: {
     margin: '0 0 10px 0',
     fontSize: '26px',
     fontWeight: '700',
     color: '#1a1a2e',
-    letterSpacing: '-0.5px'
+    letterSpacing: '-0.5px',
   },
   subtitle: {
     margin: 0,
     fontSize: '15px',
     color: '#64748b',
-    fontWeight: '500'
+    fontWeight: '500',
   },
   form: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '18px'
+    gap: '18px',
   },
   inputGroup: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px'
+    gap: '8px',
   },
   label: {
     fontSize: '14px',
     fontWeight: '600',
-    color: '#1e293b'
+    color: '#1e293b',
   },
   required: {
     color: '#dc2626',
-    marginLeft: '2px'
+    marginLeft: '2px',
   },
   input: {
     padding: '12px 15px',
@@ -466,11 +380,11 @@ const styles = {
     outline: 'none',
     transition: 'all 0.2s',
     backgroundColor: '#fff',
-    fontFamily: 'inherit'
+    fontFamily: 'inherit',
   },
   inputError: {
     borderColor: '#dc2626',
-    backgroundColor: '#fef2f2'
+    backgroundColor: '#fef2f2',
   },
   errorText: {
     fontSize: '12px',
@@ -478,7 +392,7 @@ const styles = {
     marginTop: '2px',
     display: 'flex',
     alignItems: 'center',
-    gap: '4px'
+    gap: '4px',
   },
   submitError: {
     padding: '12px',
@@ -488,7 +402,7 @@ const styles = {
     fontSize: '14px',
     textAlign: 'center',
     border: '1px solid #fecaca',
-    fontWeight: '500'
+    fontWeight: '500',
   },
   submitButton: {
     padding: '15px',
@@ -502,8 +416,8 @@ const styles = {
     transition: 'all 0.3s ease',
     marginTop: '10px',
     boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)',
-    letterSpacing: '0.3px'
-  }
+    letterSpacing: '0.3px',
+  },
 };
 
-export default HRAuthPage;
+export default HRSignupPage;

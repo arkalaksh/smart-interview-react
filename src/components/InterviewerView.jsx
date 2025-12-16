@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import { SIGNALING_SERVER, iceServers } from '../utils/config';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
-// import TranscriptSaver from './TranscriptSaver';
+
 // ---------- Helpers for localStorage persistence (optional) ----------
 const loadState = (key, defaultValue) => {
   try {
@@ -20,7 +20,7 @@ const saveState = (key, value) => {
 };
 
 const InterviewerView = ({ roomId, userName }) => {
-    const [interviewerName, setInterviewerName] = useState('');
+  const [interviewerName, setInterviewerName] = useState('');
   const [step, setStep] = useState('nameEntry'); // 'nameEntry' or 'meeting'
 
   // ---------- Persistent states ----------
@@ -33,12 +33,16 @@ const InterviewerView = ({ roomId, userName }) => {
   );
 
   // persist
-  useEffect(() => saveState('interviewer_connectionStatus', connectionStatus), [connectionStatus]);
+  useEffect(
+    () => saveState('interviewer_connectionStatus', connectionStatus),
+    [connectionStatus]
+  );
   useEffect(() => saveState('interviewer_alerts', alerts), [alerts]);
-  useEffect(() => saveState('interviewer_candidateConnected', candidateConnected), [candidateConnected]);
- 
+  useEffect(
+    () => saveState('interviewer_candidateConnected', candidateConnected),
+    [candidateConnected]
+  );
 
-  
   // ---------- Refs ----------
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -69,8 +73,7 @@ const InterviewerView = ({ roomId, userName }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // run once
 
-
- // Effect to initialize connection - only trigger on 'meeting' step and when interviewerName exists
+  // Effect to initialize connection - only trigger on 'meeting' step and when interviewerName exists
   useEffect(() => {
     if (step === 'meeting' && interviewerName.trim() !== '') {
       initializeConnection();
@@ -82,158 +85,197 @@ const InterviewerView = ({ roomId, userName }) => {
   }, [step, interviewerName]);
 
   // Handler for when user submits name
- const handleNameSubmit = async () => {
-  if (!interviewerName.trim()) {
-    alert('Please enter your name');
-    return;
-  }
+  const handleNameSubmit = async () => {
+    if (!interviewerName.trim()) {
+      alert('Please enter your name');
+      return;
+    }
 
-  await saveInterviewerName();
+    await saveInterviewerName();
 
-  setStep('meeting');
-};
+    setStep('meeting');
+  };
 
-
-  //States and Refs for Speech Recognition and Pause Detection
+  // States and Refs for Speech Recognition and Pause Detection
   const {
-  transcript,
-  listening,
-  resetTranscript,
-  browserSupportsSpeechRecognition
-} = useSpeechRecognition();
+    transcript,
+    listening,
+    resetTranscript,
+    browserSupportsSpeechRecognition,
+  } = useSpeechRecognition();
 
-const [isRecording, setIsRecording] = useState(false);
-const [secondsSinceLastSpeech, setSecondsSinceLastSpeech] = useState(0);
-const [lastSpeechTime, setLastSpeechTime] = useState(Date.now());
-const pauseTimerRef = useRef(null);
-const lastTranscriptRef = useRef('');
-const PAUSE_THRESHOLD = 10000; // 10 seconds pause threshold
-const speechStartedRef = useRef(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [secondsSinceLastSpeech, setSecondsSinceLastSpeech] = useState(0);
+  const [lastSpeechTime, setLastSpeechTime] = useState(Date.now());
+  const pauseTimerRef = useRef(null);
+  const lastTranscriptRef = useRef('');
+  const PAUSE_THRESHOLD = 10000; // 10 seconds pause threshold
+  const speechStartedRef = useRef(false);
 
-
-//Auto-start Speech Recognition Once Interviewer Has Entered Name and Step is 'meeting'
-// ✅ CORRECT: CandidateView exact pattern
-useEffect(() => {
-  if (step === 'meeting' && browserSupportsSpeechRecognition && !speechStartedRef.current) {
-    console.log('✅ Auto-starting speech recognition...');
-    setTimeout(() => {
-      startSpeechRecognition();
-      speechStartedRef.current = true;
-    }, 2000);
-  }
-}, [step, browserSupportsSpeechRecognition]);
-
-// ADD useEffect:
-useEffect(() => {
-  console.log('👨‍💼 InterviewerView MOUNTED - Room ID:', roomId, 'User:', userName || 'Guest');
-}, []);
-
-//startSpeechRecognition function:
-const startSpeechRecognition = () => {
-  resetTranscript();
-  setIsRecording(true);
-  setLastSpeechTime(Date.now());
-  setSecondsSinceLastSpeech(0);
-
-  SpeechRecognition.startListening({
-    continuous: true,
-    language: 'en-US',
-    interimResults: true
-  });
-
-  console.log('🎤 Interviewer speech recognition started');
-};
-
-
-// 🔁 Every 3 minutes, save transcript chunk automatically
-useEffect(() => {
-  if (!listening) return;
-
-  const intervalMinutes = parseInt(process.env.REACT_APP_SPEECH_SAVE_INTERVAL_MINUTES || '3');
-  const intervalMs = intervalMinutes * 60 * 1000;
-
-  const interval = setInterval(() => {
-    const textChunk = transcript.trim();
-
-    if (textChunk.length > 0) {
-      console.log(`⏳ ${intervalMinutes} min chunk detected. Saving to DB...`);
-      saveInterviewerQuestion(textChunk);
-
-      resetTranscript();
-      lastTranscriptRef.current = '';
+  // Auto-start Speech Recognition Once Interviewer Has Entered Name and Step is 'meeting'
+  useEffect(() => {
+    if (
+      step === 'meeting' &&
+      browserSupportsSpeechRecognition &&
+      !speechStartedRef.current
+    ) {
+      console.log('✅ Auto-starting speech recognition...');
+      setTimeout(() => {
+        startSpeechRecognition();
+        speechStartedRef.current = true;
+      }, 2000);
     }
-  }, intervalMs); // Uses .env value
+  }, [step, browserSupportsSpeechRecognition]);
 
-  return () => clearInterval(interval);
-}, [listening, transcript]);
+  // ADD useEffect:
+  useEffect(() => {
+    console.log(
+      '👨‍💼 InterviewerView MOUNTED - Room ID:',
+      roomId,
+      'User:',
+      userName || 'Guest'
+    );
+  }, [roomId, userName]);
 
+  // startSpeechRecognition function:
+  const startSpeechRecognition = () => {
+    resetTranscript();
+    setIsRecording(true);
+    setLastSpeechTime(Date.now());
+    setSecondsSinceLastSpeech(0);
 
-//. Increment Seconds Since Last Speech
-useEffect(() => {
-  if (!listening) return;
-  
-  const interval = setInterval(() => {
-    const elapsed = Math.floor((Date.now() - lastSpeechTime) / 1000);
-    setSecondsSinceLastSpeech(elapsed);
-  }, 1000);
-
-  return () => clearInterval(interval);
-}, [listening, lastSpeechTime]);
-
-//API Call to Save Interviewer Name
-const saveInterviewerName = async () => {
-  try {
-    const response = await fetch('http://localhost:5000/api/auth/rooms/update-interviewer-name', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roomId, interviewerName: interviewerName.trim() })
-    });
-    const data = await response.json();
-    if (response.ok) {
-      console.log('💾 Interviewer name saved:', data.message);
-    } else {
-      console.error('❌ Failed to save interviewer name:', data.error);
-    }
-  } catch (error) {
-    console.error('❌ Network error saving interviewer name:', error);
-  }
-};
-
-//API Call to Save Question
-const saveInterviewerQuestion = async (questionText) => {
-  try {
-    const response = await fetch('http://localhost:5000/api/auth/questions/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roomId, interviewerName, questionText })
+    SpeechRecognition.startListening({
+      continuous: true,
+      language: 'en-US',
+      interimResults: true,
     });
 
-    const data = await response.json();
-    if (response.ok) {
-      console.log('❓ Question saved:', data.questionId);
-      
-      // ✅ AUTO-GENERATE COMBINED TRANSCRIPT
-      // In saveInterviewerQuestion & saveAnswerToDatabase - ADD console.log
-await fetch('http://localhost:5000/api/conversation/generate-transcript', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ roomId })
-}).then(res => {
-  console.log('✅ Transcript API Response:', res.status, res.ok);
-  return res.json();
-}).then(data => {
-  console.log('📝 Transcript API Data:', data);
-}).catch(err => {
-  console.error('❌ Transcript API Error:', err);
-});
+    console.log('🎤 Interviewer speech recognition started');
+  };
 
-      console.log('📝 Full transcript updated');
+  // 🔁 Every 3 minutes, save transcript chunk automatically
+  useEffect(() => {
+    if (!listening) return;
+
+    const intervalMinutes = parseInt(
+      process.env.REACT_APP_SPEECH_SAVE_INTERVAL_MINUTES || '3'
+    );
+    const intervalMs = intervalMinutes * 60 * 1000;
+
+    const interval = setInterval(() => {
+      const textChunk = transcript.trim();
+
+      if (textChunk.length > 0) {
+        console.log(
+          `⏳ ${intervalMinutes} min chunk detected. Saving to DB...`
+        );
+        saveInterviewerQuestion(textChunk);
+
+        resetTranscript();
+        lastTranscriptRef.current = '';
+      }
+    }, intervalMs); // Uses .env value
+
+    return () => clearInterval(interval);
+  }, [listening, transcript, resetTranscript]);
+
+  //. Increment Seconds Since Last Speech
+  useEffect(() => {
+    if (!listening) return;
+
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - lastSpeechTime) / 1000);
+      setSecondsSinceLastSpeech(elapsed);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [listening, lastSpeechTime]);
+
+  // API Call to Save Interviewer Name
+  const saveInterviewerName = async () => {
+    try {
+      const response = await fetch(
+        'http://localhost:5000/api/auth/rooms/update-interviewer-name',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId, interviewerName: interviewerName.trim() }),
+        }
+      );
+      const data = await response.json();
+      if (response.ok) {
+        console.log('💾 Interviewer name saved:', data.message);
+      } else {
+        console.error('❌ Failed to save interviewer name:', data.error);
+      }
+    } catch (error) {
+      console.error('❌ Network error saving interviewer name:', error);
     }
-  } catch (error) {
-    console.error('❌ Network error saving question:', error);
-  }
-};
+  };
 
+  // API Call to Save Question
+  const saveInterviewerQuestion = async (questionText) => {
+    try {
+      const response = await fetch(
+        'http://localhost:5000/api/auth/questions/save',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId, interviewerName, questionText }),
+        }
+      );
+
+      const data = await response.json();
+      if (response.ok) {
+        console.log('❓ Question saved:', data.questionId);
+
+        // ✅ AUTO-GENERATE COMBINED TRANSCRIPT
+        await fetch('http://localhost:5000/api/conversation/generate-transcript', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId }),
+        })
+          .then((res) => {
+            console.log('✅ Transcript API Response:', res.status, res.ok);
+            return res.json();
+          })
+          .then((data) => {
+            console.log('📝 Transcript API Data:', data);
+          })
+          .catch((err) => {
+            console.error('❌ Transcript API Error:', err);
+          });
+
+        console.log('📝 Full transcript updated');
+      }
+    } catch (error) {
+      console.error('❌ Network error saving question:', error);
+    }
+  };
+
+  // NEW: Mark interview complete
+  const markInterviewComplete = async () => {
+    try {
+      const res = await fetch(
+        `http://localhost:5000/api/auth/interviews/${roomId}/complete`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        console.error('❌ Failed to mark interview complete:', data.error);
+        alert(data.error || 'Failed to complete interview');
+        return;
+      }
+      console.log('✅ Interview marked as COMPLETED');
+      alert('Interview marked as completed. You can now view result in calendar.');
+    } catch (err) {
+      console.error('❌ Network error completing interview:', err);
+      alert('Network error while completing interview');
+    }
+  };
 
   // ---------- Initialize socket + media ----------
   const initializeConnection = async () => {
@@ -241,7 +283,7 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
       console.log('📹 Requesting interviewer camera and microphone...');
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 1280, height: 720 },
-        audio: true
+        audio: true,
       });
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
@@ -252,7 +294,7 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: 5,
-        reconnectionDelay: 1000
+        reconnectionDelay: 1000,
       });
 
       socketRef.current = socket;
@@ -270,7 +312,10 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
         setConnectionStatus('Waiting for candidate...');
         // If otherPeerId exists (candidate already present), create offer immediately.
         if (data.otherPeerId) {
-          console.log('🔁 Candidate already in room -> initiating offer to', data.otherPeerId);
+          console.log(
+            '🔁 Candidate already in room -> initiating offer to',
+            data.otherPeerId
+          );
           remotePeerIdRef.current = data.otherPeerId;
           setCandidateConnected(true);
           createOffer(data.otherPeerId);
@@ -294,10 +339,9 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
         const fullAlert = {
           ...alertData,
           id: Date.now() + Math.floor(Math.random() * 1000),
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         };
-        setAlerts(prev => [fullAlert, ...prev]);
-        // optional logging for specific types
+        setAlerts((prev) => [fullAlert, ...prev]);
         if (alertData.type === 'AI_DETECTION_RESULT') {
           console.log('🤖 AI Score:', alertData.aiData?.aiScore);
         }
@@ -333,7 +377,9 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
         peerConnectionRef.current.onicecandidate = null;
         peerConnectionRef.current.onnegotiationneeded = null;
         peerConnectionRef.current.close();
-      } catch (e) { /* ignore */ }
+      } catch (e) {
+        /* ignore */
+      }
       peerConnectionRef.current = null;
     }
 
@@ -342,7 +388,7 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
 
     // Add local tracks
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => {
+      localStreamRef.current.getTracks().forEach((track) => {
         pc.addTrack(track, localStreamRef.current);
       });
     }
@@ -362,7 +408,10 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
         const targetId = remotePeerIdRef.current;
         if (targetId) {
           console.log('🧊 sending ice-candidate to', targetId);
-          socketRef.current.emit('ice-candidate', { candidate: ev.candidate, targetId });
+          socketRef.current.emit('ice-candidate', {
+            candidate: ev.candidate,
+            targetId,
+          });
         } else {
           console.warn('⚠️ no target peerId to send ICE to yet');
         }
@@ -381,7 +430,10 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         console.log('📤 Emitting offer during negotiationneeded to', targetId);
-        socketRef.current?.emit('offer', { targetId, offer: pc.localDescription });
+        socketRef.current?.emit('offer', {
+          targetId,
+          offer: pc.localDescription,
+        });
       } catch (err) {
         console.error('❌ renegotiation error', err);
       }
@@ -409,17 +461,19 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
 
       socketRef.current.emit('offer', {
         targetId: peerId,
-        offer: pc.localDescription
+        offer: pc.localDescription,
       });
 
       // If any pending ICE candidates were queued for this peer, send them now
       if (pendingIceCandidatesRef.current.length > 0) {
-        pendingIceCandidatesRef.current.forEach(c => {
-          socketRef.current.emit('ice-candidate', { candidate: c, targetId: peerId });
+        pendingIceCandidatesRef.current.forEach((c) => {
+          socketRef.current.emit('ice-candidate', {
+            candidate: c,
+            targetId: peerId,
+          });
         });
         pendingIceCandidatesRef.current = [];
       }
-
     } catch (error) {
       console.error('❌ Error creating offer:', error);
     }
@@ -449,7 +503,6 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
         }
         pendingIceCandidatesRef.current = [];
       }
-
     } catch (err) {
       console.error('❌ Error handling answer:', err);
     }
@@ -485,7 +538,7 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
 
     try {
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(t => t.stop());
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
         localStreamRef.current = null;
       }
     } catch (e) {}
@@ -500,26 +553,42 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
 
   // ---------- Alert helpers ----------
   const clearAlert = (alertId) => {
-    setAlerts(prev => prev.filter(a => a.id !== alertId));
+    setAlerts((prev) => prev.filter((a) => a.id !== alertId));
   };
   const clearAllAlerts = () => setAlerts([]);
 
   // ---------- Render ----------
-// name entry poitn 
- // Render the name entry form if in nameEntry step
+  // name entry point
   if (step === 'nameEntry') {
     return (
-      <div 
-        style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', fontFamily: 'Arial', backgroundColor: '#f4f4f4', padding: 20 }}
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          fontFamily: 'Arial',
+          backgroundColor: '#f4f4f4',
+          padding: 20,
+        }}
       >
-        <div style={{ maxWidth: 400, width: '100%', backgroundColor: 'white', borderRadius: 12, padding: 40, boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}>
+        <div
+          style={{
+            maxWidth: 400,
+            width: '100%',
+            backgroundColor: 'white',
+            borderRadius: 12,
+            padding: 40,
+            boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
+          }}
+        >
           <h2 style={{ marginBottom: 20 }}>Enter Your Name</h2>
           <input
             type="text"
             placeholder="Your full name"
             value={interviewerName}
-            onChange={e => setInterviewerName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleNameSubmit()}
+            onChange={(e) => setInterviewerName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleNameSubmit()}
             autoFocus
             style={{
               width: '100%',
@@ -528,7 +597,7 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
               borderRadius: 6,
               border: '1px solid #ccc',
               marginBottom: 20,
-              boxSizing: 'border-box'
+              boxSizing: 'border-box',
             }}
           />
           <button
@@ -544,7 +613,7 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
               borderRadius: 6,
               cursor: 'pointer',
               opacity: interviewerName.trim() ? 1 : 0.5,
-              transition: 'opacity 0.3s ease'
+              transition: 'opacity 0.3s ease',
             }}
           >
             Continue
@@ -555,141 +624,335 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
   }
 
   return (
-    <div style={{ padding: '20px', fontFamily: 'Arial', backgroundColor: '#f5f5f5', minHeight: '100vh' }}>
+    <div
+      style={{
+        padding: '20px',
+        fontFamily: 'Arial',
+        backgroundColor: '#f5f5f5',
+        minHeight: '100vh',
+      }}
+    >
       {/* Header */}
-      <div style={{
-        maxWidth: '1400px',
-        margin: '0 auto 20px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
+      <div
+        style={{
+          maxWidth: '1400px',
+          margin: '0 auto 20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
         <div>
           <h1 style={{ margin: 0, fontSize: '24px', color: '#333' }}>
             👨‍💼 Interviewer Dashboard
           </h1>
-          <p style={{ margin: '5px 0 0 0', fontSize: '14px', color: '#666' }}>
-            Room: <code style={{ backgroundColor: '#e0e0e0', padding: '2px 6px', borderRadius: '3px' }}>{roomId?.substring(0, 12)}...</code>
+          <p
+            style={{
+              margin: '5px 0 0 0',
+              fontSize: '14px',
+              color: '#666',
+            }}
+          >
+            Room:{' '}
+            <code
+              style={{
+                backgroundColor: '#e0e0e0',
+                padding: '2px 6px',
+                borderRadius: '3px',
+              }}
+            >
+              {roomId?.substring(0, 12)}...
+            </code>
           </p>
         </div>
-        <div style={{
-          padding: '10px 20px',
-          backgroundColor: candidateConnected ? '#4caf50' : '#ff9800',
-          color: 'white',
-          borderRadius: '8px',
-          fontWeight: 'bold',
-          fontSize: '14px'
-        }}>
-          {candidateConnected ? '✅ Candidate Connected' : '⏳ Waiting for Candidate'}
+        <div
+          style={{
+            padding: '10px 20px',
+            backgroundColor: candidateConnected ? '#4caf50' : '#ff9800',
+            color: 'white',
+            borderRadius: '8px',
+            fontWeight: 'bold',
+            fontSize: '14px',
+          }}
+        >
+          {candidateConnected
+            ? '✅ Candidate Connected'
+            : '⏳ Waiting for Candidate'}
         </div>
       </div>
 
       {/* Video Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', maxWidth: '1400px', margin: '0 auto 20px' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '20px',
+          maxWidth: '1400px',
+          margin: '0 auto 20px',
+        }}
+      >
         {/* Local */}
-        <div style={{ backgroundColor: '#000', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', position: 'relative' }}>
-          <video ref={localVideoRef} autoPlay muted playsInline style={{ width: '100%', height: '500px', objectFit: 'cover' }} />
-          <div style={{ position: 'absolute', bottom: '10px', left: '10px', color: 'white', backgroundColor: 'rgba(0,0,0,0.6)', padding: '5px 10px', borderRadius: '5px', fontSize: '12px' }}>
+        <div
+          style={{
+            backgroundColor: '#000',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            position: 'relative',
+          }}
+        >
+          <video
+            ref={localVideoRef}
+            autoPlay
+            muted
+            playsInline
+            style={{ width: '100%', height: '500px', objectFit: 'cover' }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '10px',
+              left: '10px',
+              color: 'white',
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              padding: '5px 10px',
+              borderRadius: '5px',
+              fontSize: '12px',
+            }}
+          >
             You (Interviewer)
           </div>
         </div>
 
         {/* Remote */}
-        <div style={{ backgroundColor: '#000', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', position: 'relative' }}>
-          <video ref={remoteVideoRef} autoPlay playsInline style={{ width: '100%', height: '500px', objectFit: 'cover' }} />
-          <div style={{ position: 'absolute', bottom: '10px', left: '10px', color: 'white', backgroundColor: 'rgba(0,0,0,0.6)', padding: '5px 10px', borderRadius: '5px', fontSize: '12px' }}>
+        <div
+          style={{
+            backgroundColor: '#000',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            position: 'relative',
+          }}
+        >
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            style={{ width: '100%', height: '500px', objectFit: 'cover' }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '10px',
+              left: '10px',
+              color: 'white',
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              padding: '5px 10px',
+              borderRadius: '5px',
+              fontSize: '12px',
+            }}
+          >
             Candidate
           </div>
         </div>
       </div>
 
+      {/* NEW: End interview button */}
+      <div
+        style={{
+          maxWidth: '1400px',
+          margin: '0 auto 20px',
+          display: 'flex',
+          justifyContent: 'flex-end',
+        }}
+      >
+        <button
+          onClick={markInterviewComplete}
+          style={{
+            padding: '10px 18px',
+            backgroundColor: '#1976d2',
+            color: 'white',
+            border: 'none',
+            borderRadius: 8,
+            cursor: 'pointer',
+            fontSize: 14,
+            fontWeight: 'bold',
+          }}
+        >
+          End Interview & Save Result
+        </button>
+      </div>
+
       {/* Alerts Panel */}
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '15px',
+          }}
+        >
           <h2 style={{ margin: 0, fontSize: '20px', color: '#333' }}>
             🚨 Monitoring Alerts ({alerts.length})
           </h2>
           {alerts.length > 0 && (
-            <button onClick={clearAllAlerts} style={{
-              padding: '8px 16px',
-              backgroundColor: '#f44336',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: 'bold'
-            }}>
+            <button
+              onClick={clearAllAlerts}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#f44336',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: 'bold',
+              }}
+            >
               Clear All
             </button>
           )}
         </div>
 
-        <div style={{
-          backgroundColor: 'white',
-          borderRadius: '12px',
-          padding: '20px',
-          maxHeight: '400px',
-          overflowY: 'auto',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-        }}>
+        <div
+          style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '20px',
+            maxHeight: '400px',
+            overflowY: 'auto',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          }}
+        >
           {alerts.length === 0 ? (
-            <p style={{ textAlign: 'center', color: '#999', margin: '40px 0' }}>
+            <p
+              style={{
+                textAlign: 'center',
+                color: '#999',
+                margin: '40px 0',
+              }}
+            >
               No alerts yet. Monitoring is active.
             </p>
           ) : (
-            alerts.map(alert => (
-              <div key={alert.id} style={{
-                padding: '15px',
-                marginBottom: '10px',
-                borderRadius: '8px',
-                border: `2px solid ${
-                  alert.severity === 'critical' ? '#f44336' :
-                  alert.severity === 'high' ? '#ff9800' :
-                  alert.severity === 'medium' ? '#ffc107' : '#2196f3'
-                }`,
-                backgroundColor: `${
-                  alert.severity === 'critical' ? '#ffebee' :
-                  alert.severity === 'high' ? '#fff3e0' :
-                  alert.severity === 'medium' ? '#fff9c4' : '#e3f2fd'
-                }`,
-                position: 'relative'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+            alerts.map((alert) => (
+              <div
+                key={alert.id}
+                style={{
+                  padding: '15px',
+                  marginBottom: '10px',
+                  borderRadius: '8px',
+                  border: `2px solid ${
+                    alert.severity === 'critical'
+                      ? '#f44336'
+                      : alert.severity === 'high'
+                      ? '#ff9800'
+                      : alert.severity === 'medium'
+                      ? '#ffc107'
+                      : '#2196f3'
+                  }`,
+                  backgroundColor: `${
+                    alert.severity === 'critical'
+                      ? '#ffebee'
+                      : alert.severity === 'high'
+                      ? '#fff3e0'
+                      : alert.severity === 'medium'
+                      ? '#fff9c4'
+                      : '#e3f2fd'
+                  }`,
+                  position: 'relative',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'start',
+                  }}
+                >
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 'bold', marginBottom: '5px', color: '#333' }}>
-                      {alert.type === 'AI_DETECTION_RESULT' && '🤖 AI Detection Result'}
-                      {alert.type === 'LOOKING_AWAY' && '👁️ Eye Tracking Alert'}
-                      {alert.type === 'TAB_SWITCHED' && '⚠️ Tab Switch Detected'}
+                    <div
+                      style={{
+                        fontWeight: 'bold',
+                        marginBottom: '5px',
+                        color: '#333',
+                      }}
+                    >
+                      {alert.type === 'AI_DETECTION_RESULT' &&
+                        '🤖 AI Detection Result'}
+                      {alert.type === 'LOOKING_AWAY' &&
+                        '👁️ Eye Tracking Alert'}
+                      {alert.type === 'TAB_SWITCHED' &&
+                        '⚠️ Tab Switch Detected'}
                     </div>
-                    <div style={{ fontSize: '14px', color: '#555', marginBottom: '8px' }}>
+                    <div
+                      style={{
+                        fontSize: '14px',
+                        color: '#555',
+                        marginBottom: '8px',
+                      }}
+                    >
                       {alert.message}
                     </div>
                     {alert.aiData && (
-                      <div style={{ fontSize: '12px', color: '#666', backgroundColor: 'white', padding: '8px', borderRadius: '4px', marginTop: '8px' }}>
-                        <div><strong>AI Score:</strong> {alert.aiData.aiScore}%</div>
-                        <div><strong>Method:</strong> {alert.aiData.detectionMethod}</div>
-                        <div><strong>Words:</strong> {alert.aiData.wordCount}</div>
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          color: '#666',
+                          backgroundColor: 'white',
+                          padding: '8px',
+                          borderRadius: '4px',
+                          marginTop: '8px',
+                        }}
+                      >
+                        <div>
+                          <strong>AI Score:</strong> {alert.aiData.aiScore}%
+                        </div>
+                        <div>
+                          <strong>Method:</strong>{' '}
+                          {alert.aiData.detectionMethod}
+                        </div>
+                        <div>
+                          <strong>Words:</strong> {alert.aiData.wordCount}
+                        </div>
                         {alert.aiData.textAnalyzed && (
-                          <div style={{ marginTop: '5px', fontStyle: 'italic', color: '#888' }}>
-                            "{alert.aiData.textAnalyzed.substring(0, 100)}..."
+                          <div
+                            style={{
+                              marginTop: '5px',
+                              fontStyle: 'italic',
+                              color: '#888',
+                            }}
+                          >
+                            "
+                            {alert.aiData.textAnalyzed.substring(0, 100)}
+                            ..."
                           </div>
                         )}
                       </div>
                     )}
-                    <div style={{ fontSize: '11px', color: '#999', marginTop: '5px' }}>
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        color: '#999',
+                        marginTop: '5px',
+                      }}
+                    >
                       {new Date(alert.timestamp).toLocaleString()}
                     </div>
                   </div>
-                  <button onClick={() => clearAlert(alert.id)} style={{
-                    marginLeft: '10px',
-                    padding: '4px 8px',
-                    backgroundColor: '#e0e0e0',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '12px'
-                  }}>
+                  <button
+                    onClick={() => clearAlert(alert.id)}
+                    style={{
+                      marginLeft: '10px',
+                      padding: '4px 8px',
+                      backgroundColor: '#e0e0e0',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                    }}
+                  >
                     ✕
                   </button>
                 </div>
@@ -698,8 +961,8 @@ await fetch('http://localhost:5000/api/conversation/generate-transcript', {
           )}
         </div>
       </div>
-          {/* Add TranscriptSaver here */}
-    {/* {step === 'meeting' && <TranscriptSaver roomId={roomId} senderRole="interviewer" />} */}
+
+      {/* {step === 'meeting' && <TranscriptSaver roomId={roomId} senderRole="interviewer" />} */}
 
       <style>{`
         button:hover {

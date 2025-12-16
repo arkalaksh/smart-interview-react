@@ -102,6 +102,31 @@
   text-decoration: underline;
 }
 
+/* NEW: view result button */
+.view-result-btn {
+  margin-top: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: none;
+  background: #51cf66;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* NEW: status chip for non-completed */
+.status-chip {
+  margin-top: 8px;
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #ffe066;
+  font-size: 11px;
+  font-weight: 600;
+  color: #555;
+}
+
 /* ===== React-Calendar overrides in view style ===== */
 
 .view-calendar {
