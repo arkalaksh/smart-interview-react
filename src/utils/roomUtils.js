@@ -9,10 +9,10 @@ export const generateRoomId = () => {
 
 export const generateCandidateLink = (roomId) => {
   const baseUrl = window.location.origin;
-  return `${baseUrl}/interview/candidate/${roomId}`;
+  return `${baseUrl}/#/interview/candidate/${roomId}`;
 };
 
 export const generateInterviewerLink = (roomId) => {
   const baseUrl = window.location.origin;
-  return `${baseUrl}/interview/interviewer/${roomId}`;
+  return `${baseUrl}/#/interview/interviewer/${roomId}`;
 };
