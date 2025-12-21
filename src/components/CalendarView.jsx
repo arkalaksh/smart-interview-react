@@ -20,7 +20,7 @@ const CalendarView = () => {
     const fetchInterviews = async () => {
       try {
         const response = await fetch(
-          `http://localhost:5000/api/auth/interview-rooms/user/${userId}`
+          `https://darkcyan-hornet-746720.hostingersite.com/api/auth/interview-rooms/user/${userId}`
         );
         if (!response.ok) throw new Error('Failed to fetch interviews');
         const data = await response.json();
@@ -55,7 +55,7 @@ const CalendarView = () => {
   const handleViewResult = async (roomId) => {
     try {
       const res = await fetch(
-        `http://localhost:5000/api/auth/interviews/${roomId}/details`
+        `https://darkcyan-hornet-746720.hostingersite.com/api/auth/interviews/${roomId}/details`
       );
       const data = await res.json();
       if (!data.success) {

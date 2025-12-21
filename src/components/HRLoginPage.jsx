@@ -45,7 +45,7 @@ const HRLoginPage = () => {
 
     setLoading(true);
     try {
-      const url = 'http://localhost:5000/api/auth/login-request-otp';
+      const url = 'https://darkcyan-hornet-746720.hostingersite.com/api/auth/login-request-otp';
 
       const body = {
         email: formData.email,
@@ -80,7 +80,7 @@ const HRLoginPage = () => {
     }
     setLoading(true);
     try {
-      const url = 'http://localhost:5000/api/auth/login-verify-otp';
+      const url = 'https://darkcyan-hornet-746720.hostingersite.com/api/auth/login-verify-otp';
 
       const body = {
         email: formData.email,

@@ -195,7 +195,7 @@ const InterviewerView = ({ roomId, userName }) => {
   const saveInterviewerName = async () => {
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/rooms/update-interviewer-name',
+        'https://darkcyan-hornet-746720.hostingersite.com/api/auth/rooms/update-interviewer-name',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -217,7 +217,7 @@ const InterviewerView = ({ roomId, userName }) => {
   const saveInterviewerQuestion = async (questionText) => {
     try {
       const response = await fetch(
-        'http://localhost:5000/api/auth/questions/save',
+        'https://darkcyan-hornet-746720.hostingersite.com/api/auth/questions/save',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -230,7 +230,7 @@ const InterviewerView = ({ roomId, userName }) => {
         console.log('❓ Question saved:', data.questionId);
 
         // ✅ AUTO-GENERATE COMBINED TRANSCRIPT
-        await fetch('http://localhost:5000/api/conversation/generate-transcript', {
+        await fetch('https://darkcyan-hornet-746720.hostingersite.com/api/conversation/generate-transcript', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ roomId }),
@@ -257,7 +257,7 @@ const InterviewerView = ({ roomId, userName }) => {
   const markInterviewComplete = async () => {
     try {
       const res = await fetch(
-        `http://localhost:5000/api/auth/interviews/${roomId}/complete`,
+        `https://darkcyan-hornet-746720.hostingersite.com/api/auth/interviews/${roomId}/complete`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

@@ -93,7 +93,7 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
     { x: 90, y: 90 }
   ];
 
-  const proxyUrl = 'http://localhost:5000/api/auth/ai-detect';
+  const proxyUrl = 'https://darkcyan-hornet-746720.hostingersite.com/api/auth/ai-detect';
   const model = 'roberta-base-openai-detector';
 
   // ==================== SAVE STATE TO LOCALSTORAGE ====================
@@ -323,7 +323,7 @@ const CandidateView = ({ roomId, userName: propUserName }) => {
   //===================== save the answers to db ==============
 const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCount, aiScore, detectionMethod, modelUsed }) => {
   try {
-    const response = await fetch('http://localhost:5000/api/auth/answers/save', {
+    const response = await fetch('https://darkcyan-hornet-746720.hostingersite.com/api/auth/answers/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -343,7 +343,7 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
       
       // ✅ GENERATE COMBINED TRANSCRIPT
       try {
-        const transcriptRes = await fetch('http://localhost:5000/api/conversation/generate-transcript', {
+        const transcriptRes = await fetch('https://darkcyan-hornet-746720.hostingersite.com/api/conversation/generate-transcript', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ roomId })
@@ -374,7 +374,7 @@ const saveAnswerToDatabase = async ({ roomId, candidateName, answerText, wordCou
   console.log('✅ Name entered:', candidateName);
   // 🚀 Save candidate name to database
   try {
-    const response = await fetch('http://localhost:5000/api/auth/rooms/update-candidate-name', {
+    const response = await fetch('https://darkcyan-hornet-746720.hostingersite.com/api/auth/rooms/update-candidate-name', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ roomId, candidateName: candidateName.trim() })

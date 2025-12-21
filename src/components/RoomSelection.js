@@ -90,7 +90,7 @@ const handleSaveToDatabase = async () => {
   console.log('📦 Sending interview data to backend:', interviewData);
 
   try {
-    const response = await fetch('http://localhost:5000/api/auth/interview-rooms', {
+    const response = await fetch('https://darkcyan-hornet-746720.hostingersite.com/api/auth/interview-rooms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(interviewData),
@@ -114,7 +114,7 @@ const handleSaveToDatabase = async () => {
 // ✅ Logout handler
   const handleLogout = async () => {
     try {
-      await fetch('http://localhost:5000/api/auth/logout', {
+      await fetch('https://darkcyan-hornet-746720.hostingersite.com/api/auth/logout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -146,7 +146,7 @@ const handleViewInCalendar = async () => {
 
   try {
     // Fetch all interview rooms for current user to display in calendar
-const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/user/${userId}`);
+const response = await fetch(`https://darkcyan-hornet-746720.hostingersite.com/api/auth/interview-rooms/user/${userId}`);
     if (response.ok) {
       const interviews = await response.json();
       console.log('Fetched scheduled interviews:', interviews);

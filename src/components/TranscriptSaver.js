@@ -25,7 +25,7 @@
 //     lastSavedTranscriptRef.current = fullText;
 
 //     try {
-//       const res = await fetch('http://localhost:5000/api/conversation/save-full', {
+//       const res = await fetch('https://darkcyan-hornet-746720.hostingersite.com/api/conversation/save-full', {
 //         method: 'POST',
 //         headers: {'Content-Type': 'application/json'},
 //         body: JSON.stringify({ roomId, senderRole, transcriptText: fullText }),

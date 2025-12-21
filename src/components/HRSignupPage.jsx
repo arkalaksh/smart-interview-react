@@ -52,7 +52,7 @@ const HRSignupPage = () => {
 
     setLoading(true);
     try {
-      const url = 'http://localhost:5000/api/auth/register';
+      const url = 'https://darkcyan-hornet-746720.hostingersite.com/api/auth/register';
 
       const body = {
         email: formData.email,
@@ -90,7 +90,7 @@ const HRSignupPage = () => {
     }
     setLoading(true);
     try {
-      const url = 'http://localhost:5000/api/auth/verify-otp';
+      const url = 'https://darkcyan-hornet-746720.hostingersite.com/api/auth/verify-otp';
 
       const body = {
         email: formData.email,

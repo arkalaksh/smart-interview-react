@@ -1,4 +1,4 @@
-export const SIGNALING_SERVER = 'http://localhost:5000';
+export const SIGNALING_SERVER = 'https://darkcyan-hornet-746720.hostingersite.com';
 
 export const iceServers = {
   iceServers: [
