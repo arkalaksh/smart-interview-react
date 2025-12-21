@@ -87,11 +87,11 @@ function App() {
 
         {/* Interview Pages - Direct access allowed */}
         <Route
-          path="/#/interview/candidate/:roomId"
+          path="/interview/candidate/:roomId"
           element={<CandidateViewWrapper />}
         />
         <Route
-          path="/#/interview/interviewer/:roomId"
+          path="/interview/interviewer/:roomId"
           element={<InterviewerViewWrapper />}
         />
 
