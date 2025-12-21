@@ -779,7 +779,7 @@ const analyzeTextWithAI = async (text) => {
       setConnectionStatus('Connecting...');
 
       const newSocket = io(SIGNALING_SERVER, {
-        transports: ['websocket', 'polling'],
+        transports: ['polling'],
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000

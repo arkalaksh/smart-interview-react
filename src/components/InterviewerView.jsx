@@ -291,7 +291,7 @@ const InterviewerView = ({ roomId, userName }) => {
 
       console.log('🔌 Creating socket connection to:', SIGNALING_SERVER);
       const socket = io(SIGNALING_SERVER, {
-        transports: ['websocket', 'polling'],
+        transports: ['polling'],
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
