@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
-import { generateRoomId, generateCandidateLink, generateInterviewerLink } from '../utils/roomUtils';
+import {
+  generateRoomId,
+  generateCandidateLink,
+  generateInterviewerLink,
+} from '../utils/roomUtils';
+
+const API_BASE =
+  process.env.REACT_APP_API_BASE || 'http://localhost:5000';
 
 const RoomSelection = () => {
   const navigate = useNavigate();
@@ -15,32 +22,52 @@ const RoomSelection = () => {
   const [interviewerLinkCopied, setInterviewerLinkCopied] = useState(false);
   const [savedToCalendar, setSavedToCalendar] = useState(false);
 
+  // stats state
+  const [todayInterviews, setTodayInterviews] = useState(0);
+  const [pendingInvites, setPendingInvites] = useState(0);
+  const [totalInterviews, setTotalInterviews] = useState(0);
+  const [statsLoading, setStatsLoading] = useState(true);
 
-const user = JSON.parse(localStorage.getItem('user') || '{}');
-const userId = user.id || null;
-const userName = user.full_name || '';  
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const userId = user.id || null;
+  const userName = user.full_name || '';
+  const isValidUser = !!userId && !!userName;
 
-// Check if user is valid
-if (!userId || !userName) {
-  alert('User not authenticated or user data missing. Please login again.');
-  return null; // Or redirect to login page
-}
+  // fetch HR stats for card (based on created_by_hr_id)
+  useEffect(() => {
+    if (!isValidUser) return;
 
-// Then use userId and userName anywhere, for example:
-console.log('User ID:', userId);
-console.log('User Name:', userName);
+    const fetchStats = async () => {
+      try {
+        setStatsLoading(true);
+        const res = await fetch(
+          `${API_BASE}/api/auth/interview-rooms/stats/${userId}`
+        );
+        if (!res.ok) {
+          console.error('Stats API not ok', res.status);
+          return;
+        }
+        const data = await res.json();
+        console.log('HR stats response:', data);
 
+        setTodayInterviews(data.interviews_today || 0);
+        setPendingInvites(data.pending_invites || 0);
+        setTotalInterviews(data.total_interviews || 0);
+      } catch (err) {
+        console.error('Error fetching HR stats', err);
+      } finally {
+        setStatsLoading(false);
+      }
+    };
 
-
+    fetchStats();
+  }, [isValidUser, userId]);
 
   const handleCreateNewRoom = () => {
-    console.log('📅 Opening calendar for date selection...');
     setCurrentStep('calendar');
   };
 
   const handleDateSelect = (date) => {
-    console.log('📆 Selected date:', date);
-
     setSelectedDate(date);
 
     const newRoomId = generateRoomId();
@@ -50,8 +77,6 @@ console.log('User Name:', userName);
     setGeneratedRoomId(newRoomId);
     setCandidateLink(candLink);
     setInterviewerLink(intLink);
-
-    console.log('🔐 Generated Room ID:', newRoomId);
     setCurrentStep('links');
   };
 
@@ -69,104 +94,89 @@ console.log('User Name:', userName);
     });
   };
 
-  // API POST to save interview room data in DB
-// Saves the current interview room data to the backend
-const handleSaveToDatabase = async () => {
-  // Generate actual tokens (replace with secure token generation or UUID)
-  // const candidateToken = 'candidate-secure-token'; 
-  // const interviewerToken = 'interviewer-secure-token';
+  const handleSaveToDatabase = async () => {
+    const interviewData = {
+      roomId: generatedRoomId,
+      scheduledDate: selectedDate.toISOString(),
+      candidateLink,
+      interviewerLink,
+      createdByHrId: userId,
+      status: 'SCHEDULED',
+    };
 
-  const interviewData = {
-    roomId: generatedRoomId,
-    scheduledDate: selectedDate.toISOString(),
-    candidateLink,
-    // candidateToken,
-    interviewerLink,
-    // interviewerToken,
-    createdByHrId: userId,  // use extracted userId variable
-    status: 'scheduled'
-  };
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/auth/interview-rooms`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(interviewData),
+        }
+      );
 
-  console.log('📦 Sending interview data to backend:', interviewData);
+      const data = await response.json();
 
-  try {
-    const response = await fetch('http://localhost:5000/api/auth/interview-rooms', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(interviewData),
-    });
-
-    const data = await response.json();
-
-    if (response.ok) {
-      alert('✅ Interview scheduled and saved successfully!');
-      return true;
-    } else {
-      alert(`❌ Failed to save interview: ${data.error || 'Unknown error'}`);
+      if (response.ok) {
+        alert('✅ Interview scheduled and saved successfully!');
+        return true;
+      } else {
+        alert(`❌ Failed to save interview: ${data.error || 'Unknown error'}`);
+        return false;
+      }
+    } catch (error) {
+      alert(`❌ Network error: ${error.message}`);
       return false;
     }
-  } catch (error) {
-    alert(`❌ Network error: ${error.message}`);
-    return false;
-  }
-};
+  };
 
-// ✅ Logout handler
   const handleLogout = async () => {
     try {
-      await fetch('http://localhost:5000/api/auth/logout', {
+      await fetch(`${API_BASE}/api/auth/logout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
     } catch (e) {
-      // ignore network error on logout
+      // ignore
     } finally {
       localStorage.removeItem('user');
-      localStorage.removeItem('scheduledInterviews'); // optional
-      navigate('/login'); // or '/'
+      localStorage.removeItem('scheduledInterviews');
+      navigate('/login');
     }
   };
 
-  // Check if user is valid
-  if (!userId || !userName) {
+  // final auth guard (after hooks)
+  if (!isValidUser) {
     alert('User not authenticated or user data missing. Please login again.');
     navigate('/login');
     return null;
   }
 
-  // Then use userId and userName anywhere, for example:
-  console.log('User ID:', userId);
-  console.log('User Name:', userName);
+  const handleViewInCalendar = async () => {
+    const saved = await handleSaveToDatabase();
+    if (!saved) return;
 
-// Fetches saved interviews, stores them, and navigates to calendar view
-const handleViewInCalendar = async () => {
-  // First save interview; if fails, do not proceed
-  const saved = await handleSaveToDatabase();
-  if (!saved) return;
-
-  try {
-    // Fetch all interview rooms for current user to display in calendar
-const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/user/${userId}`);
-    if (response.ok) {
-      const interviews = await response.json();
-      console.log('Fetched scheduled interviews:', interviews);
-
-      // Save interviews in localStorage for calendar page
-      localStorage.setItem('scheduledInterviews', JSON.stringify(interviews));
-
-      setSavedToCalendar(true);
-      navigate('/calendar-view');
-    } else {
-      alert('Interview room data not found. Redirecting to calendar.');
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/auth/interview-rooms/user/${userId}`
+      );
+      if (response.ok) {
+        const interviews = await response.json();
+        localStorage.setItem(
+          'scheduledInterviews',
+          JSON.stringify(interviews)
+        );
+        setSavedToCalendar(true);
+        navigate('/calendar-view');
+      } else {
+        alert('Interview room data not found. Redirecting to calendar.');
+        navigate('/calendar-view');
+      }
+    } catch (error) {
+      console.error('Error fetching interview rooms:', error);
+      alert('Network error fetching interviews. Redirecting to calendar.');
       navigate('/calendar-view');
     }
-  } catch (error) {
-    console.error('Error fetching interview rooms:', error);
-    alert('Network error fetching interviews. Redirecting to calendar.');
-    navigate('/calendar-view');
-  }
-};
-
+  };
 
   const handleBackToMain = () => {
     setCurrentStep('main');
@@ -201,10 +211,12 @@ const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/use
                   weekday: 'short',
                   month: 'short',
                   day: 'numeric',
-                  year: 'numeric'
-                })} at {selectedDate.toLocaleTimeString('en-US', {
+                  year: 'numeric',
+                })}{' '}
+                at{' '}
+                {selectedDate.toLocaleTimeString('en-US', {
                   hour: '2-digit',
-                  minute: '2-digit'
+                  minute: '2-digit',
                 })}
               </span>
             </div>
@@ -220,10 +232,14 @@ const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/use
 
             <div style={styles.linkCard}>
               <div style={styles.linkCardHeader}>
-                <div style={styles.avatarCircle} data-role="candidate">C</div>
+                <div style={styles.avatarCircle} data-role="candidate">
+                  C
+                </div>
                 <div>
                   <h4 style={styles.linkCardTitle}>Candidate Link</h4>
-                  <p style={styles.linkCardSubtitle}>Share this with the interview candidate</p>
+                  <p style={styles.linkCardSubtitle}>
+                    Share this with the interview candidate
+                  </p>
                 </div>
               </div>
               <div style={styles.linkInputWrapper}>
@@ -231,7 +247,7 @@ const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/use
                   type="text"
                   value={candidateLink}
                   readOnly
-                  onClick={e => e.target.select()}
+                  onClick={(e) => e.target.select()}
                   style={styles.modernInput}
                 />
                 <button onClick={copyCandidateLink} style={styles.copyButton}>
@@ -242,10 +258,14 @@ const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/use
 
             <div style={styles.linkCard}>
               <div style={styles.linkCardHeader}>
-                <div style={styles.avatarCircle} data-role="interviewer">I</div>
+                <div style={styles.avatarCircle} data-role="interviewer">
+                  I
+                </div>
                 <div>
                   <h4 style={styles.linkCardTitle}>Interviewer Link</h4>
-                  <p style={styles.linkCardSubtitle}>Share with HR team and interviewers</p>
+                  <p style={styles.linkCardSubtitle}>
+                    Share with HR team and interviewers
+                  </p>
                 </div>
               </div>
               <div style={styles.linkInputWrapper}>
@@ -253,10 +273,13 @@ const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/use
                   type="text"
                   value={interviewerLink}
                   readOnly
-                  onClick={e => e.target.select()}
+                  onClick={(e) => e.target.select()}
                   style={styles.modernInput}
                 />
-                <button onClick={copyInterviewerLink} style={styles.copyButton}>
+                <button
+                  onClick={copyInterviewerLink}
+                  style={styles.copyButton}
+                >
                   {interviewerLinkCopied ? '✓ Copied' : 'Copy'}
                 </button>
               </div>
@@ -267,7 +290,10 @@ const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/use
             <button onClick={handleViewInCalendar} style={styles.primaryButton}>
               {savedToCalendar ? '✓ Saved to Calendar' : 'View in Calendar'}
             </button>
-            <button onClick={handleSaveToDatabase} style={styles.secondaryButton}>
+            <button
+              onClick={handleSaveToDatabase}
+              style={styles.secondaryButton}
+            >
               Save to Database
             </button>
           </div>
@@ -289,7 +315,9 @@ const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/use
             <div style={{ width: '80px' }}></div>
           </div>
 
-          <p style={styles.instructionText}>Select a date and time for the interview</p>
+          <p style={styles.instructionText}>
+            Select a date and time for the interview
+          </p>
 
           <div style={styles.calendarContainer}>
             <Calendar
@@ -307,12 +335,15 @@ const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/use
                 weekday: 'long',
                 month: 'long',
                 day: 'numeric',
-                year: 'numeric'
+                year: 'numeric',
               })}
             </span>
           </div>
 
-          <button onClick={() => handleDateSelect(selectedDate)} style={styles.continueButton}>
+          <button
+            onClick={() => handleDateSelect(selectedDate)}
+            style={styles.continueButton}
+          >
             Continue →
           </button>
         </div>
@@ -330,33 +361,127 @@ const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/use
             <span style={styles.logoText}>Interview Hub</span>
           </div>
           <div style={styles.userInfo}>
-            <span style={styles.userName}>{userName}</span>
-<div style={styles.userAvatar}>{userName.charAt(0)}</div>
-<h1 style={styles.welcomeTitle}>
-  Welcome back, {userName?.split(' ')[0] || 'Guest'}
-</h1>
- </div>
-           
-            <button onClick={handleLogout} style={styles.logoutButton}>
-              Logout
-            </button>
+            <div>
+              <div style={styles.userNameLabel}>Logged in as</div>
+              <div style={styles.userNameBig}>{userName}</div>
+            </div>
+            <div style={styles.userAvatar}>{userName.charAt(0)}</div>
           </div>
-    
-         
-      
+
+          <button onClick={handleLogout} style={styles.logoutButton}>
+            Logout
+          </button>
+        </div>
+
+        {/* Today’s overview stats card – improved UI */}
+        <div style={{ padding: '24px 32px 0' }}>
+          <div style={styles.statsWrapper}>
+            <div style={styles.statsHeaderRow}>
+              <div>
+                <h3 style={styles.statsTitle}>Today’s overview</h3>
+                <p style={styles.statsSubtitle}>
+                  Quick snapshot of interviews you own
+                </p>
+              </div>
+              <span style={styles.statsDateChip}>
+                {new Date().toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                })}
+              </span>
+            </div>
+
+            <div style={styles.statsGrid}>
+              <div
+                onClick={() => navigate('/calendar-view')}
+                style={{
+                  ...styles.statsCard,
+                  background:
+                    'linear-gradient(135deg, rgba(129, 140, 248, 0.15), rgba(129, 230, 217, 0.12))',
+                  borderColor: 'rgba(129, 140, 248, 0.5)',
+                }}
+              >
+                <div style={styles.statsCardLabelRow}>
+                  <span style={styles.statsCardLabel}>Interviews today</span>
+                  <span style={{ ...styles.chip, backgroundColor: 'rgba(129,140,248,0.18)', color: '#4c51bf' }}>
+                    Live
+                  </span>
+                </div>
+                <div style={styles.statsValueRow}>
+                  <span style={styles.statsValue}>
+                    {statsLoading ? '…' : todayInterviews}
+                  </span>
+                </div>
+                <p style={styles.statsHint}>
+                  Click to see today’s slots in calendar
+                </p>
+              </div>
+
+              <div
+                onClick={() => navigate('/calendar-view')}
+                style={{
+                  ...styles.statsCard,
+                  background:
+                    'linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(248, 250, 252, 0.06))',
+                  borderColor: 'rgba(245, 158, 11, 0.5)',
+                }}
+              >
+                <div style={styles.statsCardLabelRow}>
+                  <span style={styles.statsCardLabel}>Pending invites</span>
+                  <span style={{ ...styles.chip, backgroundColor: 'rgba(245,158,11,0.18)', color: '#b45309' }}>
+                    Scheduled
+                  </span>
+                </div>
+                <div style={styles.statsValueRow}>
+                  <span style={styles.statsValue}>
+                    {statsLoading ? '…' : pendingInvites}
+                  </span>
+                </div>
+                <p style={styles.statsHint}>
+                  Interviews still in scheduled state
+                </p>
+              </div>
+
+              <div style={{ ...styles.statsCard, opacity: statsLoading ? 0.7 : 1 }}>
+                <div style={styles.statsCardLabelRow}>
+                  <span style={styles.statsCardLabel}>Total created</span>
+                  <span style={{ ...styles.chip, backgroundColor: 'rgba(16,185,129,0.16)', color: '#047857' }}>
+                    All time
+                  </span>
+                </div>
+                <div style={styles.statsValueRow}>
+                  <span style={styles.statsValue}>
+                    {statsLoading ? '…' : totalInterviews}
+                  </span>
+                </div>
+                <p style={styles.statsHint}>
+                  All interviews where you are the HR owner
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <div style={styles.cardGrid}>
           <div style={styles.primaryCard} onClick={handleCreateNewRoom}>
             <div style={styles.cardIcon}>➕</div>
             <h3 style={styles.cardTitle}>Schedule New Interview</h3>
-            <p style={styles.cardDescription}>Create a new interview room with unique links</p>
+            <p style={styles.cardDescription}>
+              Create a new interview room with unique links
+            </p>
             <div style={styles.cardArrow}>→</div>
           </div>
 
-          <div style={styles.secondaryCard} onClick={() => navigate('/calendar-view')}>
+          <div
+            style={styles.secondaryCard}
+            onClick={() => navigate('/calendar-view')}
+          >
             <div style={styles.cardIconSecondary}>📅</div>
             <h3 style={styles.cardTitleSecondary}>View Calendar</h3>
-            <p style={styles.cardDescriptionSecondary}>See all scheduled interviews</p>
+            <p style={styles.cardDescriptionSecondary}>
+              See all scheduled interviews
+            </p>
             <div style={styles.cardArrowSecondary}>→</div>
           </div>
         </div>
@@ -365,525 +490,445 @@ const response = await fetch(`http://localhost:5000/api/auth/interview-rooms/use
   );
 };
 
-
-
 const styles = {
   pageWrapper: {
     minHeight: '100vh',
-    background: 'linear-gradient(to bottom, #f8f9fb 0%, #e9ecef 100%)',
-    padding: '0',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+    background:
+      'radial-gradient(circle at top left, #e0e7ff 0, transparent 55%), radial-gradient(circle at bottom right, #fcd9bd 0, #f8fafc 55%)',
+    padding: 0,
+    fontFamily:
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   },
   modernContainer: {
-    maxWidth: '1000px',
+    maxWidth: '1100px',
     margin: '0 auto',
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(255,255,255,0.86)',
     minHeight: '100vh',
-    boxShadow: '0 0 50px rgba(0,0,0,0.08)'
+    boxShadow: '0 24px 80px rgba(15,23,42,0.18)',
+    backdropFilter: 'blur(14px)',
+    borderRadius: '28px',
+    overflow: 'hidden',
   },
   topNav: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '20px 40px',
-    borderBottom: '1px solid #e9ecef'
+    padding: '20px 32px',
+    borderBottom: '1px solid rgba(226,232,240,0.8)',
+    background:
+      'linear-gradient(90deg, rgba(15,23,42,0.9), rgba(30,64,175,0.9))',
+    color: 'white',
   },
   logo: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px'
+    gap: '10px',
   },
   logoIcon: {
-    fontSize: '28px'
+    fontSize: '24px',
   },
   logoText: {
-    fontSize: '20px',
-    fontWeight: '700',
-    color: '#1a1a2e'
+    fontSize: '19px',
+    fontWeight: 700,
+    letterSpacing: '0.04em',
   },
   userInfo: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px'
+    gap: '12px',
   },
-  userName: {
+  userNameLabel: {
+    fontSize: '11px',
+    opacity: 0.8,
+  },
+  userNameBig: {
     fontSize: '14px',
-    fontWeight: '500',
-    color: '#495057'
+    fontWeight: 600,
   },
   userAvatar: {
-    width: '40px',
-    height: '40px',
+    width: '38px',
+    height: '38px',
     borderRadius: '50%',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    background:
+      'radial-gradient(circle at 30% 0, #facc15 0, transparent 55%), linear-gradient(135deg, #6366f1, #ec4899)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     color: 'white',
-    fontWeight: '600',
-    fontSize: '16px'
+    fontWeight: 700,
+    fontSize: '17px',
+    boxShadow: '0 8px 18px rgba(15,23,42,0.55)',
   },
-  welcomeSection: {
-    padding: '40px 40px 30px',
-    borderBottom: '1px solid #e9ecef'
-  },
-
-  welcomeTitle: {
-    fontSize: '32px',
-    fontWeight: '700',
-    color: '#1a1a2e',
-    margin: '0 0 8px 0'
-  },
-    logoutButton: {
+  logoutButton: {
     marginLeft: '12px',
-    padding: '8px 16px',
-    backgroundColor: '#f03e3e',
+    padding: '8px 14px',
+    backgroundColor: 'rgba(248,113,113,0.95)',
     color: '#fff',
     border: 'none',
-    borderRadius: '8px',
-    fontSize: '13px',
-    fontWeight: '600',
+    borderRadius: '999px',
+    fontSize: '12px',
+    fontWeight: 600,
     cursor: 'pointer',
+    boxShadow: '0 8px 16px rgba(248,113,113,0.45)',
   },
 
-  welcomeSubtitle: {
-    fontSize: '16px',
-    color: '#6c757d',
-    margin: 0
+  // Stats section
+  statsWrapper: {
+    background:
+      'radial-gradient(circle at top left, rgba(129,140,248,0.22), transparent 55%), radial-gradient(circle at bottom right, rgba(45,212,191,0.18), transparent 55%)',
+    borderRadius: '24px',
+    padding: '20px 22px 18px',
+    border: '1px solid rgba(148,163,184,0.35)',
+    boxShadow: '0 20px 45px rgba(15,23,42,0.18)',
   },
-  cardGrid: {
-    padding: '40px',
+  statsHeaderRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statsTitle: {
+    margin: 0,
+    fontSize: 18,
+    fontWeight: 600,
+    color: '#0f172a',
+  },
+  statsSubtitle: {
+    margin: '4px 0 0',
+    fontSize: 12,
+    color: '#64748b',
+  },
+  statsDateChip: {
+    fontSize: 11,
+    padding: '6px 10px',
+    borderRadius: '999px',
+    border: '1px solid rgba(148,163,184,0.5)',
+    color: '#0f172a',
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    backdropFilter: 'blur(6px)',
+  },
+  statsGrid: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '24px'
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    gap: '14px',
+    marginTop: 16,
+  },
+  statsCard: {
+    cursor: 'pointer',
+    padding: '14px 14px 12px',
+    borderRadius: '18px',
+    border: '1px solid rgba(148,163,184,0.6)',
+    backgroundColor: 'rgba(15,23,42,0.02)',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+    minHeight: '86px',
+  },
+  statsCardLabelRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  statsCardLabel: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#0f172a',
+  },
+  chip: {
+    fontSize: 10,
+    padding: '4px 8px',
+    borderRadius: '999px',
+    fontWeight: 600,
+  },
+  statsValueRow: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 4,
+  },
+  statsValue: {
+    fontSize: 26,
+    fontWeight: 700,
+    color: '#0f172a',
+  },
+  statsHint: {
+    marginTop: 4,
+    fontSize: 11,
+    color: '#64748b',
+  },
+
+  cardGrid: {
+    padding: '32px',
+    display: 'grid',
+    gridTemplateColumns: '1.3fr 1fr',
+    gap: '22px',
   },
   primaryCard: {
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    borderRadius: '16px',
-    padding: '32px',
+    background: 'linear-gradient(135deg, #4f46e5 0%, #ec4899 100%)',
+    borderRadius: '20px',
+    padding: '26px',
     cursor: 'pointer',
     position: 'relative',
-    transition: 'transform 0.2s, box-shadow 0.2s',
-    boxShadow: '0 4px 20px rgba(102, 126, 234, 0.3)',
-    ':hover': {
-      transform: 'translateY(-4px)',
-      boxShadow: '0 8px 30px rgba(102, 126, 234, 0.4)'
-    }
+    transition: 'transform 0.2s, boxShadow 0.2s',
+    boxShadow: '0 18px 40px rgba(79,70,229,0.45)',
+    color: 'white',
+    overflow: 'hidden',
   },
   cardIcon: {
-    fontSize: '40px',
-    marginBottom: '16px'
+    fontSize: '32px',
+    marginBottom: '10px',
   },
   cardTitle: {
     fontSize: '20px',
-    fontWeight: '700',
-    color: 'white',
-    margin: '0 0 8px 0'
+    fontWeight: 700,
+    margin: '0 0 6px 0',
   },
   cardDescription: {
-    fontSize: '14px',
+    fontSize: '13px',
     color: 'rgba(255,255,255,0.9)',
     margin: 0,
-    lineHeight: '1.5'
+    lineHeight: 1.5,
   },
   cardArrow: {
     position: 'absolute',
-    top: '32px',
-    right: '32px',
+    top: '20px',
+    right: '22px',
     fontSize: '24px',
-    color: 'white',
-    fontWeight: '700'
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: 700,
   },
   secondaryCard: {
     background: 'white',
-    borderRadius: '16px',
-    padding: '32px',
+    borderRadius: '20px',
+    padding: '24px',
     cursor: 'pointer',
-    border: '2px solid #e9ecef',
+    border: '1px solid rgba(226,232,240,0.9)',
     position: 'relative',
-    transition: 'all 0.2s'
+    transition: 'all 0.2s',
+    boxShadow: '0 10px 24px rgba(15,23,42,0.08)',
   },
   cardIconSecondary: {
-    fontSize: '40px',
-    marginBottom: '16px'
+    fontSize: '32px',
+    marginBottom: '10px',
   },
   cardTitleSecondary: {
-    fontSize: '20px',
-    fontWeight: '700',
-    color: '#1a1a2e',
-    margin: '0 0 8px 0'
+    fontSize: '18px',
+    fontWeight: 700,
+    color: '#0f172a',
+    margin: '0 0 6px 0',
   },
   cardDescriptionSecondary: {
-    fontSize: '14px',
-    color: '#6c757d',
+    fontSize: '13px',
+    color: '#64748b',
     margin: 0,
-    lineHeight: '1.5'
+    lineHeight: 1.5,
   },
   cardArrowSecondary: {
     position: 'absolute',
-    top: '32px',
-    right: '32px',
-    fontSize: '24px',
-    color: '#667eea',
-    fontWeight: '700'
+    top: '18px',
+    right: '20px',
+    fontSize: '22px',
+    color: '#4f46e5',
+    fontWeight: 700,
   },
-  featuresSection: {
-    padding: '0 40px 40px'
-  },
-  featuresTitle: {
-    fontSize: '18px',
-    fontWeight: '700',
-    color: '#1a1a2e',
-    marginBottom: '20px'
-  },
-  featuresGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '16px'
-  },
-  featureItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '20px',
-    background: '#f8f9fb',
-    borderRadius: '12px',
-    border: '1px solid #e9ecef'
-  },
-  featureIcon: {
-    fontSize: '28px'
-  },
-  featureText: {
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#495057',
-    textAlign: 'center'
-  },
+
   modernHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '24px 40px',
-    borderBottom: '1px solid #e9ecef'
+    padding: '20px 32px',
+    borderBottom: '1px solid #e9ecef',
   },
   backButton: {
-    padding: '10px 20px',
+    padding: '8px 16px',
     backgroundColor: 'white',
     border: '1px solid #dee2e6',
-    borderRadius: '8px',
+    borderRadius: '999px',
     cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600',
+    fontSize: '13px',
+    fontWeight: 600,
     color: '#495057',
-    transition: 'all 0.2s'
   },
   modernTitle: {
-    fontSize: '24px',
-    fontWeight: '700',
+    fontSize: '22px',
+    fontWeight: 700,
     color: '#1a1a2e',
-    margin: 0
+    margin: 0,
   },
   instructionText: {
     textAlign: 'center',
-    padding: '24px 40px',
-    fontSize: '15px',
+    padding: '18px 32px 10px',
+    fontSize: '14px',
     color: '#6c757d',
-    margin: 0
+    margin: 0,
   },
   calendarContainer: {
-    padding: '0 40px 24px',
+    padding: '0 32px 18px',
     display: 'flex',
-    justifyContent: 'center'
+    justifyContent: 'center',
   },
   selectedDateDisplay: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '12px',
-    padding: '0 40px 24px'
+    gap: '10px',
+    padding: '0 32px 22px',
   },
   selectedLabel: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#6c757d'
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#6c757d',
   },
   selectedValue: {
-    fontSize: '16px',
-    fontWeight: '700',
-    color: '#1a1a2e'
+    fontSize: '15px',
+    fontWeight: 700,
+    color: '#1a1a2e',
   },
   continueButton: {
-    width: 'calc(100% - 80px)',
-    margin: '0 40px 40px',
-    padding: '16px',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    width: 'calc(100% - 64px)',
+    margin: '0 32px 28px',
+    padding: '14px',
+    background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
     color: 'white',
     border: 'none',
-    borderRadius: '12px',
-    fontSize: '16px',
-    fontWeight: '700',
+    borderRadius: '999px',
+    fontSize: '15px',
+    fontWeight: 700,
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    boxShadow: '0 4px 16px rgba(102, 126, 234, 0.3)'
+    boxShadow: '0 12px 30px rgba(79,70,229,0.4)',
   },
   infoCard: {
-    margin: '24px 40px',
-    padding: '24px',
+    margin: '18px 32px',
+    padding: '20px',
     background: '#f8f9fb',
-    borderRadius: '12px',
-    border: '1px solid #e9ecef'
+    borderRadius: '14px',
+    border: '1px solid #e9ecef',
   },
   infoRow: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '12px 0'
+    padding: '10px 0',
   },
   infoLabel: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#6c757d'
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#6c757d',
   },
   infoValue: {
-    fontSize: '15px',
-    fontWeight: '600',
-    color: '#1a1a2e'
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#1a1a2e',
   },
   meetingId: {
-    fontSize: '16px',
-    fontWeight: '700',
-    color: '#667eea',
+    fontSize: '15px',
+    fontWeight: 700,
+    color: '#4f46e5',
     fontFamily: 'monospace',
-    letterSpacing: '1px'
+    letterSpacing: '1px',
   },
   divider: {
     height: '1px',
     background: '#dee2e6',
-    margin: '8px 0'
+    margin: '8px 0',
   },
   linkSection: {
-    padding: '0 40px'
+    padding: '0 32px',
   },
   sectionTitle: {
-    fontSize: '18px',
-    fontWeight: '700',
+    fontSize: '17px',
+    fontWeight: 700,
     color: '#1a1a2e',
-    marginBottom: '20px'
+    marginBottom: '16px',
   },
   linkCard: {
     background: 'white',
-    border: '2px solid #e9ecef',
+    border: '1px solid #e5e7eb',
     borderRadius: '12px',
-    padding: '24px',
-    marginBottom: '16px',
-    transition: 'all 0.2s'
+    padding: '20px',
+    marginBottom: '14px',
   },
   linkCardHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: '16px',
-    marginBottom: '16px'
+    gap: '14px',
+    marginBottom: '12px',
   },
   avatarCircle: {
-    width: '48px',
-    height: '48px',
+    width: '42px',
+    height: '42px',
     borderRadius: '50%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '20px',
-    fontWeight: '700',
+    fontSize: '18px',
+    fontWeight: 700,
     color: 'white',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+    background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
   },
   linkCardTitle: {
-    fontSize: '16px',
-    fontWeight: '700',
-    color: '#1a1a2e',
-    margin: '0 0 4px 0'
+    fontSize: '15px',
+    fontWeight: 700,
+    color: '#1f2933',
+    margin: '0 0 2px 0',
   },
   linkCardSubtitle: {
-    fontSize: '13px',
+    fontSize: '12px',
     color: '#6c757d',
-    margin: 0
+    margin: 0,
   },
   linkInputWrapper: {
     display: 'flex',
-    gap: '12px'
+    gap: '10px',
   },
   modernInput: {
     flex: 1,
-    padding: '12px 16px',
-    fontSize: '13px',
+    padding: '10px 12px',
+    fontSize: '12px',
     border: '1px solid #dee2e6',
     borderRadius: '8px',
     fontFamily: 'monospace',
     backgroundColor: '#f8f9fb',
-    color: '#495057'
+    color: '#495057',
   },
   copyButton: {
-    padding: '12px 24px',
-    background: '#667eea',
+    padding: '10px 18px',
+    background: '#4f46e5',
     color: 'white',
     border: 'none',
     borderRadius: '8px',
-    fontSize: '14px',
-    fontWeight: '600',
+    fontSize: '13px',
+    fontWeight: 600,
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    whiteSpace: 'nowrap'
+    whiteSpace: 'nowrap',
   },
   actionButtons: {
     display: 'flex',
-    gap: '16px',
-    padding: '24px 40px 40px'
+    gap: '14px',
+    padding: '20px 32px 28px',
   },
   primaryButton: {
     flex: 1,
-    padding: '16px',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    padding: '14px',
+    background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
     color: 'white',
     border: 'none',
-    borderRadius: '12px',
-    fontSize: '16px',
-    fontWeight: '700',
+    borderRadius: '999px',
+    fontSize: '15px',
+    fontWeight: 700,
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    boxShadow: '0 4px 16px rgba(102, 126, 234, 0.3)'
+    boxShadow: '0 10px 26px rgba(79,70,229,0.4)',
   },
   secondaryButton: {
     flex: 1,
-    padding: '16px',
+    padding: '14px',
     background: 'white',
-    color: '#667eea',
-    border: '2px solid #667eea',
-    borderRadius: '12px',
-    fontSize: '16px',
-    fontWeight: '700',
+    color: '#4f46e5',
+    border: '1px solid #4f46e5',
+    borderRadius: '999px',
+    fontSize: '15px',
+    fontWeight: 700,
     cursor: 'pointer',
-    transition: 'all 0.2s'
-  }
+  },
 };
-
-// Enhanced Calendar Styles
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-  .modern-calendar {
-    border: none !important;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-    width: 100% !important;
-    max-width: 450px !important;
-    background: white !important;
-    border-radius: 12px !important;
-    overflow: hidden !important;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.08) !important;
-  }
-
-  .modern-calendar .react-calendar__navigation {
-    background: #f8f9fb !important;
-    margin-bottom: 0 !important;
-    padding: 16px !important;
-    border-bottom: 1px solid #e9ecef !important;
-  }
-
-  .modern-calendar .react-calendar__navigation button {
-    font-size: 16px !important;
-    font-weight: 700 !important;
-    color: #1a1a2e !important;
-    min-width: 44px !important;
-  }
-
-  .modern-calendar .react-calendar__navigation button:enabled:hover {
-    background-color: #e9ecef !important;
-    border-radius: 8px !important;
-  }
-
-  .modern-calendar .react-calendar__month-view__weekdays {
-    background: #f8f9fb !important;
-    padding: 12px 0 !important;
-    text-transform: uppercase !important;
-    font-size: 11px !important;
-    font-weight: 700 !important;
-    color: #6c757d !important;
-  }
-
-  .modern-calendar .react-calendar__month-view__days {
-    padding: 8px !important;
-  }
-
-  .modern-calendar .react-calendar__tile {
-    padding: 16px 8px !important;
-    font-size: 14px !important;
-    font-weight: 600 !important;
-    border-radius: 8px !important;
-    transition: all 0.2s !important;
-  }
-
-  .modern-calendar .react-calendar__tile:enabled:hover {
-    background-color: #f0f4ff !important;
-    color: #667eea !important;
-  }
-
-  .modern-calendar .react-calendar__tile--active {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-    color: white !important;
-    font-weight: 700 !important;
-  }
-
-  .modern-calendar .react-calendar__tile--now {
-    background: #fff3cd !important;
-    color: #856404 !important;
-    font-weight: 700 !important;
-  }
-
-  .modern-calendar .react-calendar__tile--now:enabled:hover {
-    background: #ffe69c !important;
-  }
-
-  .modern-calendar .react-calendar__month-view__days__day--weekend {
-    color: #dc3545 !important;
-  }
-
-  /* Hover effects for cards */
-  [style*="primaryCard"]:hover {
-    transform: translateY(-4px) !important;
-    box-shadow: 0 8px 30px rgba(102, 126, 234, 0.4) !important;
-  }
-
-  [style*="secondaryCard"]:hover {
-    border-color: #667eea !important;
-    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.15) !important;
-  }
-
-  [style*="copyButton"]:hover {
-    background: #5568d3 !important;
-    transform: translateY(-1px) !important;
-  }
-
-  [style*="backButton"]:hover {
-    background: #f8f9fb !important;
-    border-color: #adb5bd !important;
-  }
-
-  [style*="continueButton"]:hover,
-  [style*="primaryButton"]:hover {
-    transform: translateY(-2px) !important;
-    box-shadow: 0 6px 24px rgba(102, 126, 234, 0.4) !important;
-  }
-
-  [style*="secondaryButton"]:hover {
-    background: #f0f4ff !important;
-  }
-
-  [data-role="candidate"] {
-    background: linear-gradient(135deg, #00c9ff 0%, #92fe9d 100%) !important;
-  }
-
-  [data-role="interviewer"] {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-  }
-`;
-document.head.appendChild(styleSheet);
 
 export default RoomSelection;
