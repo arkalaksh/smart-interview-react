@@ -1,14 +1,19 @@
-import React, { useState, useEffect } from 'react'; 
+import React, { useState, useEffect } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import './Calendar.css';
 
+const API_BASE = 'http://localhost:5000/api/auth';  // 👉 लोकल backend
+
 const CalendarView = () => {
   const [interviews, setInterviews] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [viewMode, setViewMode] = useState('DAY'); // 'DAY' | 'ALL'
+
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const userName = user.full_name || 'Guest';
 
   useEffect(() => {
-    // Fetch scheduled interviews for the logged-in user from API
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const userId = user.id;
 
@@ -20,7 +25,7 @@ const CalendarView = () => {
     const fetchInterviews = async () => {
       try {
         const response = await fetch(
-          `https://darkcyan-hornet-746720.hostingersite.com/api/auth/interview-rooms/user/${userId}`
+          `${API_BASE}/interview-rooms/user/${userId}`
         );
         if (!response.ok) throw new Error('Failed to fetch interviews');
         const data = await response.json();
@@ -33,7 +38,7 @@ const CalendarView = () => {
     };
 
     fetchInterviews();
-  }, []); // run once on mount
+  }, []);
 
   const interviewsOnDate =
     Array.isArray(interviews) && selectedDate
@@ -51,11 +56,10 @@ const CalendarView = () => {
         new Date(i.scheduled_date).toDateString() === date.toDateString()
     );
 
-  // NEW: View result handler
   const handleViewResult = async (roomId) => {
     try {
       const res = await fetch(
-        `https://darkcyan-hornet-746720.hostingersite.com/api/auth/interviews/${roomId}/details`
+        `${API_BASE}/interviews/${roomId}/details`
       );
       const data = await res.json();
       if (!data.success) {
@@ -77,34 +81,177 @@ const CalendarView = () => {
     }
   };
 
+  const handleCancel = async (roomId) => {
+    if (!window.confirm('Cancel this interview?')) return;
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/interview-rooms/${roomId}/cancel`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Cancelled from calendar' }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || 'Failed to cancel');
+        return;
+      }
+
+      setInterviews((prev) =>
+        prev.map((it) =>
+          it.room_id === roomId ? { ...it, status: 'CANCELLED' } : it
+        )
+      );
+      alert('Interview cancelled');
+    } catch (e) {
+      console.error(e);
+      alert('Network error while cancelling');
+    }
+  };
+
+  const handleReschedule = async (interview) => {
+    const current = interview.scheduled_date
+      ? interview.scheduled_date.replace('T', ' ').slice(0, 16)
+      : '';
+
+    const input = window.prompt(
+      'Enter new date & time (YYYY-MM-DD HH:mm, 24h):',
+      current
+    );
+    if (!input) return;
+
+    const iso = new Date(input.replace(' ', 'T')).toISOString();
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/interview-rooms/${interview.room_id}/reschedule`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scheduledDate: iso }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || 'Failed to reschedule');
+        return;
+      }
+
+      setInterviews((prev) =>
+        prev.map((it) =>
+          it.room_id === interview.room_id
+            ? { ...it, scheduled_date: iso, status: 'RESCHEDULED' }
+            : it
+        )
+      );
+      alert('Interview rescheduled');
+    } catch (e) {
+      console.error(e);
+      alert('Network error while rescheduling');
+    }
+  };
+
+  const handleSendEmail = async (roomId) => {
+    try {
+      const res = await fetch(
+        `${API_BASE}/interview-rooms/${roomId}/send-email`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'REMINDER' }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.error || 'Failed to send email');
+        return;
+      }
+
+      alert('Email sent successfully');
+    } catch (e) {
+      console.error(e);
+      alert('Network error while sending email');
+    }
+  };
+
+  const listToShow = viewMode === 'DAY' ? interviewsOnDate : interviews;
+
   return (
-    <div className="page-center-wrapper">
-      <div className="view-calendar-layout">
-        <div className="view-calendar-wrapper">
-          <Calendar
-            onChange={setSelectedDate}
-            value={selectedDate}
-            className="view-calendar"
-            tileClassName={({ date, view }) => {
-              if (view === 'month' && hasInterviewForDate(date)) {
-                return 'has-interview';
-              }
-              return null;
-            }}
-          />
+    <div className="calendar-page-wrapper">
+      {/* Header */}
+      <div className="calendar-top-nav">
+        <div className="calendar-logo">
+          <div className="calendar-logo-icon">🎯</div>
+          <span className="calendar-logo-text">Interview Hub</span>
         </div>
-        {selectedDate && (
+
+        <div className="calendar-user-info">
+          <div className="calendar-welcome-texts">
+            <span className="calendar-user-name">{userName}</span>
+            <h1 className="calendar-welcome-title">Interview calendar</h1>
+          </div>
+          <div className="calendar-user-avatar">
+            {userName.charAt(0)}
+          </div>
+        </div>
+      </div>
+
+      {/* Main layout */}
+      <div className="page-center-wrapper">
+        <div className="view-calendar-layout">
+          <div className="view-calendar-wrapper">
+            <Calendar
+              onChange={setSelectedDate}
+              value={selectedDate}
+              className="view-calendar"
+              tileClassName={({ date, view }) => {
+                if (view === 'month' && hasInterviewForDate(date)) {
+                  return 'has-interview';
+                }
+                return null;
+              }}
+            />
+          </div>
+
           <div className="view-calendar-sidepanel">
-            <h3>{selectedDate.toDateString()}</h3>
-            {interviewsOnDate.length === 0 ? (
-              <p className="empty-text">No interviews scheduled</p>
+            <div className="sidepanel-header">
+              <h3>
+                {viewMode === 'DAY'
+                  ? selectedDate.toDateString()
+                  : 'All interviews'}
+              </h3>
+              <div className="sidepanel-toggle">
+                <button
+                  className={
+                    viewMode === 'DAY' ? 'toggle-btn active' : 'toggle-btn'
+                  }
+                  onClick={() => setViewMode('DAY')}
+                >
+                  Day
+                </button>
+                <button
+                  className={
+                    viewMode === 'ALL' ? 'toggle-btn active' : 'toggle-btn'
+                  }
+                  onClick={() => setViewMode('ALL')}
+                >
+                  All
+                </button>
+              </div>
+            </div>
+
+            {listToShow.length === 0 ? (
+              <p className="empty-text">No interviews found</p>
             ) : (
-              interviewsOnDate.map((i) => (
+              listToShow.map((i) => (
                 <div key={i.room_id} className="interview-card">
                   <div className="interview-id">
                     <span>Meeting ID</span>
                     <strong>{i.room_id}</strong>
                   </div>
+
                   <div className="interview-links">
                     <a
                       href={i.candidate_link}
@@ -122,22 +269,52 @@ const CalendarView = () => {
                     </a>
                   </div>
 
-                  {/* NEW: status / result */}
-                  {i.status === 'COMPLETED' ? (
+                  <div className="interview-meta">
+                    <span>
+                      {new Date(i.scheduled_date).toLocaleString('en-IN', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })}
+                    </span>
+                    <span className={`status-chip status-${i.status}`}>
+                      {i.status}
+                    </span>
+                  </div>
+
+                  {i.status === 'COMPLETED' && (
                     <button
                       className="view-result-btn"
                       onClick={() => handleViewResult(i.room_id)}
                     >
                       View result
                     </button>
-                  ) : (
-                    <span className="status-chip">{i.status}</span>
                   )}
+
+                  <div className="interview-actions">
+                    <button
+                      className="action-btn cancel"
+                      onClick={() => handleCancel(i.room_id)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="action-btn reschedule"
+                      onClick={() => handleReschedule(i)}
+                    >
+                      Reschedule
+                    </button>
+                    <button
+                      className="action-btn email"
+                      onClick={() => handleSendEmail(i.room_id)}
+                    >
+                      Send Email
+                    </button>
+                  </div>
                 </div>
               ))
             )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
