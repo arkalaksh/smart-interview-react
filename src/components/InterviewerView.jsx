@@ -1,10 +1,13 @@
-// InterviewerView.js
+// ✅ COMPLETE FIXED InterviewerView.jsx - FULL TRANSCRIPT SAVE + NO 404 ERRORS
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import { SIGNALING_SERVER, iceServers } from '../utils/config';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 
-// ---------- Helpers for localStorage persistence (optional) ----------
+// ✅ API base (backend port 5000)
+const API_BASE = 'http://localhost:5000/api/auth';
+
+// ---------- Helpers for localStorage persistence ----------
 const loadState = (key, defaultValue) => {
   try {
     const raw = localStorage.getItem(key);
@@ -32,6 +35,9 @@ const InterviewerView = ({ roomId, userName }) => {
     loadState('interviewer_candidateConnected', false)
   );
 
+  // ✅ NEW: Full transcript state for auto-save + display
+  const [fullTranscript, setFullTranscript] = useState('');
+
   // persist
   useEffect(
     () => saveState('interviewer_connectionStatus', connectionStatus),
@@ -50,36 +56,35 @@ const InterviewerView = ({ roomId, userName }) => {
   const socketRef = useRef(null);
   const localStreamRef = useRef(null);
 
-  // We'll keep the remote peerId (candidate) in a ref so callbacks can access it.
   const remotePeerIdRef = useRef(null);
-
-  // Queue ICE candidates that arrive early (before remoteDescription is set)
   const pendingIceCandidatesRef = useRef([]);
-
-  // Keep track if component is mounted to avoid state updates after unmount
   const mountedRef = useRef(true);
 
-  // ---------- Initialize connection (mount) ----------
+  // speech refs
+  const lastTranscriptRef = useRef('');     // last transcript shown in UI
+  const savedTranscriptRef = useRef('');    // transcript already saved to DB
+
+  // ---------- Mount / Unmount ----------
   useEffect(() => {
     mountedRef.current = true;
-    console.log('🔌 Interviewer initializing connection...');
-    initializeConnection();
+    console.log('🔌 InterviewerView mounted');
 
     return () => {
       mountedRef.current = false;
       console.log('🧹 Interviewer cleaning up on unmount...');
       cleanupConnection();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once
+  }, []);
 
   // Effect to initialize connection - only trigger on 'meeting' step and when interviewerName exists
   useEffect(() => {
     if (step === 'meeting' && interviewerName.trim() !== '') {
+      console.log('🔌 Initializing connection for meeting step...');
       initializeConnection();
     }
-    // Cleanup on unmount or step change
+    // Cleanup on step / interviewerName change
     return () => {
+      console.log('🧹 Cleaning up connection on step/name change...');
       cleanupConnection();
     };
   }, [step, interviewerName]);
@@ -92,11 +97,10 @@ const InterviewerView = ({ roomId, userName }) => {
     }
 
     await saveInterviewerName();
-
     setStep('meeting');
   };
 
-  // States and Refs for Speech Recognition and Pause Detection
+  // ---------- Speech Recognition ----------
   const {
     transcript,
     listening,
@@ -108,9 +112,25 @@ const InterviewerView = ({ roomId, userName }) => {
   const [secondsSinceLastSpeech, setSecondsSinceLastSpeech] = useState(0);
   const [lastSpeechTime, setLastSpeechTime] = useState(Date.now());
   const pauseTimerRef = useRef(null);
-  const lastTranscriptRef = useRef('');
   const PAUSE_THRESHOLD = 10000; // 10 seconds pause threshold
   const speechStartedRef = useRef(false);
+
+  // ✅ LIVE TRANSCRIPT BUILD - Updates fullTranscript as you speak
+  useEffect(() => {
+    if (transcript.trim() && listening) {
+      const newText = transcript.trim();
+      if (newText !== lastTranscriptRef.current) {
+        setFullTranscript((prev) => {
+          const updated =
+            (prev ? prev + '\n' : '') + '[Interviewer Live]: ' + newText;
+          lastTranscriptRef.current = newText;
+          return updated;
+        });
+        // mark this as spoken (but not necessarily saved to DB)
+        setLastSpeechTime(Date.now());
+      }
+    }
+  }, [transcript, listening]);
 
   // Auto-start Speech Recognition Once Interviewer Has Entered Name and Step is 'meeting'
   useEffect(() => {
@@ -127,7 +147,7 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   }, [step, browserSupportsSpeechRecognition]);
 
-  // ADD useEffect:
+  // MOUNT log
   useEffect(() => {
     console.log(
       '👨‍💼 InterviewerView MOUNTED - Room ID:',
@@ -137,9 +157,12 @@ const InterviewerView = ({ roomId, userName }) => {
     );
   }, [roomId, userName]);
 
-  // startSpeechRecognition function:
+  // ✅ startSpeechRecognition function (with proper resets)
   const startSpeechRecognition = () => {
     resetTranscript();
+    savedTranscriptRef.current = '';
+    lastTranscriptRef.current = '';
+    setFullTranscript('');
     setIsRecording(true);
     setLastSpeechTime(Date.now());
     setSecondsSinceLastSpeech(0);
@@ -153,33 +176,32 @@ const InterviewerView = ({ roomId, userName }) => {
     console.log('🎤 Interviewer speech recognition started');
   };
 
-  // 🔁 Every 3 minutes, save transcript chunk automatically
+  // ✅ AUTO-SAVE TRANSCRIPT EVERY 30 SECONDS (NO DUPLICATES)
   useEffect(() => {
     if (!listening) return;
 
-    const intervalMinutes = parseInt(
-      process.env.REACT_APP_SPEECH_SAVE_INTERVAL_MINUTES || '3'
-    );
-    const intervalMs = intervalMinutes * 60 * 1000;
-
     const interval = setInterval(() => {
-      const textChunk = transcript.trim();
+      const currentText = transcript.trim();
+      if (!currentText) return;
 
-      if (textChunk.length > 0) {
-        console.log(
-          `⏳ ${intervalMinutes} min chunk detected. Saving to DB...`
-        );
-        saveInterviewerQuestion(textChunk);
+      // save ONLY new spoken part
+      const newChunk = currentText
+        .replace(savedTranscriptRef.current, '')
+        .trim();
 
-        resetTranscript();
-        lastTranscriptRef.current = '';
+      if (newChunk.length > 0) {
+        console.log('💾 Auto-saving new transcript chunk (30 sec)...', newChunk);
+        saveInterviewerQuestion(newChunk);
+
+        // mark this part as saved (everything up to currentText)
+        savedTranscriptRef.current = currentText;
       }
-    }, intervalMs); // Uses .env value
+    }, 30000); // ✅ 30 seconds
 
     return () => clearInterval(interval);
-  }, [listening, transcript, resetTranscript]);
+  }, [listening, transcript]);
 
-  //. Increment Seconds Since Last Speech
+  // Increment Seconds Since Last Speech
   useEffect(() => {
     if (!listening) return;
 
@@ -191,15 +213,18 @@ const InterviewerView = ({ roomId, userName }) => {
     return () => clearInterval(interval);
   }, [listening, lastSpeechTime]);
 
-  // API Call to Save Interviewer Name
+  // ✅ FIXED: API Call to Save Interviewer Name
   const saveInterviewerName = async () => {
     try {
       const response = await fetch(
-        'https://darkcyan-hornet-746720.hostingersite.com/api/auth/rooms/update-interviewer-name',
+        `${API_BASE}/rooms/update-interviewer-name`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomId, interviewerName: interviewerName.trim() }),
+          body: JSON.stringify({
+            roomId,
+            interviewerName: interviewerName.trim(),
+          }),
         }
       );
       const data = await response.json();
@@ -213,67 +238,104 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   };
 
-  // API Call to Save Question
+  // ✅ FIXED: API Call to Save Question
   const saveInterviewerQuestion = async (questionText) => {
     try {
-      const response = await fetch(
-        'https://darkcyan-hornet-746720.hostingersite.com/api/auth/questions/save',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomId, interviewerName, questionText }),
-        }
-      );
+      const response = await fetch(`${API_BASE}/questions/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomId,
+          interviewerName: interviewerName || 'Interviewer',
+          questionText,
+        }),
+      });
 
       const data = await response.json();
       if (response.ok) {
         console.log('❓ Question saved:', data.questionId);
-
-        // ✅ AUTO-GENERATE COMBINED TRANSCRIPT
-        await fetch('https://darkcyan-hornet-746720.hostingersite.com/api/conversation/generate-transcript', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ roomId }),
-        })
-          .then((res) => {
-            console.log('✅ Transcript API Response:', res.status, res.ok);
-            return res.json();
-          })
-          .then((data) => {
-            console.log('📝 Transcript API Data:', data);
-          })
-          .catch((err) => {
-            console.error('❌ Transcript API Error:', err);
-          });
-
-        console.log('📝 Full transcript updated');
+      } else {
+        console.error('❌ Question save error:', data.error);
       }
     } catch (error) {
       console.error('❌ Network error saving question:', error);
     }
   };
 
-  // NEW: Mark interview complete
+  // ✅ FINAL FIX: Flush pending transcript + Mark interview complete safely
   const markInterviewComplete = async () => {
     try {
-      const res = await fetch(
-        `https://darkcyan-hornet-746720.hostingersite.com/api/auth/interviews/${roomId}/complete`,
+      console.log('🔚 Ending interview...');
+
+      // 1️⃣ SAVE any UNSAVED live transcript before ending
+      const currentText = transcript.trim();
+      const pendingTranscript = currentText
+        ? currentText.replace(savedTranscriptRef.current, '').trim()
+        : '';
+
+      if (pendingTranscript.length > 0) {
+        console.log('💾 Saving last pending transcript chunk...', pendingTranscript);
+        await saveInterviewerQuestion(pendingTranscript);
+        savedTranscriptRef.current =
+          (savedTranscriptRef.current + ' ' + pendingTranscript).trim();
+      }
+
+      // 2️⃣ Prepare FULL transcript (prefer UI fullTranscript, fallback to savedTranscriptRef)
+      const fromSaved = savedTranscriptRef.current?.trim() || '';
+      const fromLive = fullTranscript?.trim() || '';
+      const finalTranscript = fromLive || fromSaved;
+
+      if (!finalTranscript) {
+        console.warn('⚠️ Transcript is empty, completing interview without transcript');
+      } else {
+        console.log(
+          '📜 Final transcript preview:',
+          finalTranscript.substring(0, 100) + '...'
+        );
+      }
+
+      // 3️⃣ Mark interview COMPLETE + send FULL transcript (or null)
+      const completeResponse = await fetch(
+        `${API_BASE}/interviews/${roomId}/complete`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transcript: finalTranscript || null,
+            completedAt: new Date().toISOString(),
+          }),
         }
       );
-      const data = await res.json();
-      if (!res.ok) {
-        console.error('❌ Failed to mark interview complete:', data.error);
-        alert(data.error || 'Failed to complete interview');
-        return;
+
+      const completeData = await completeResponse.json();
+
+      if (!completeResponse.ok) {
+        throw new Error(completeData?.error || 'Failed to complete interview');
       }
-      console.log('✅ Interview marked as COMPLETED');
-      alert('Interview marked as completed. You can now view result in calendar.');
-    } catch (err) {
-      console.error('❌ Network error completing interview:', err);
-      alert('Network error while completing interview');
+
+      console.log('✅ Interview COMPLETED + FULL TRANSCRIPT SAVED');
+
+      // 4️⃣ Stop speech recognition (IMPORTANT)
+      SpeechRecognition.stopListening();
+
+      // 5️⃣ Cleanup WebRTC + Socket
+      cleanupConnection();
+
+      // 6️⃣ Notify candidate
+      socketRef.current?.emit('end-interview', { roomId });
+
+      // 7️⃣ Redirect success
+      const wordCount = finalTranscript ? finalTranscript.split(' ').length : 0;
+      alert(
+        `✅ Interview COMPLETED${
+          finalTranscript ? ' & FULL TRANSCRIPT SAVED' : ''
+        }!\n\nRoom: ${roomId}\nWords: ${wordCount}`
+      );
+
+      window.location.href = '#/calendar-view';
+    } catch (error) {
+      console.error('❌ Complete error:', error);
+      alert(`Failed to end interview: ${error.message}`);
     }
   };
 
@@ -303,14 +365,12 @@ const InterviewerView = ({ roomId, userName }) => {
       socket.on('connect', () => {
         console.log('✅ Socket connected:', socket.id);
         setConnectionStatus('Connected');
-        // Always (re)join the room when socket connects
         socket.emit('join-room', { roomId, role: 'interviewer', userName });
       });
 
       socket.on('room-joined', (data) => {
         console.log('✅ room-joined:', data);
         setConnectionStatus('Waiting for candidate...');
-        // If otherPeerId exists (candidate already present), create offer immediately.
         if (data.otherPeerId) {
           console.log(
             '🔁 Candidate already in room -> initiating offer to',
@@ -324,10 +384,8 @@ const InterviewerView = ({ roomId, userName }) => {
 
       socket.on('peer-joined', (data) => {
         console.log('✅ peer-joined event (new peer):', data);
-        // candidate just joined => data.socketId is candidate's id
         remotePeerIdRef.current = data.socketId;
         setCandidateConnected(true);
-        // create offer for the newly joined candidate
         createOffer(data.socketId);
       });
 
@@ -358,7 +416,6 @@ const InterviewerView = ({ roomId, userName }) => {
         setConnectionStatus('Connection error');
       });
 
-      // Done
       setConnectionStatus('Ready');
     } catch (error) {
       console.error('❌ Connection initialization failed:', error);
@@ -370,30 +427,25 @@ const InterviewerView = ({ roomId, userName }) => {
   const createPeerConnection = (peerId) => {
     console.log('🔗 createPeerConnection for', peerId);
 
-    // If exists, close it and create a fresh one (helps after reload)
     if (peerConnectionRef.current) {
       try {
         peerConnectionRef.current.ontrack = null;
         peerConnectionRef.current.onicecandidate = null;
         peerConnectionRef.current.onnegotiationneeded = null;
         peerConnectionRef.current.close();
-      } catch (e) {
-        /* ignore */
-      }
+      } catch (e) {}
       peerConnectionRef.current = null;
     }
 
     const pc = new RTCPeerConnection(iceServers);
     peerConnectionRef.current = pc;
 
-    // Add local tracks
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
         pc.addTrack(track, localStreamRef.current);
       });
     }
 
-    // When remote track arrives
     pc.ontrack = (event) => {
       console.log('📥 ontrack', event);
       if (remoteVideoRef.current) {
@@ -402,7 +454,6 @@ const InterviewerView = ({ roomId, userName }) => {
       }
     };
 
-    // ICE candidate -> send to the target peer
     pc.onicecandidate = (ev) => {
       if (ev.candidate && socketRef.current) {
         const targetId = remotePeerIdRef.current;
@@ -418,7 +469,6 @@ const InterviewerView = ({ roomId, userName }) => {
       }
     };
 
-    // auto-renegotiate if needed
     pc.onnegotiationneeded = async () => {
       try {
         console.log('♻️ onnegotiationneeded triggered');
@@ -452,10 +502,8 @@ const InterviewerView = ({ roomId, userName }) => {
       }
 
       remotePeerIdRef.current = peerId;
-      // ensure a fresh pc exists
       const pc = createPeerConnection(peerId);
 
-      // createOffer/send
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
@@ -464,7 +512,6 @@ const InterviewerView = ({ roomId, userName }) => {
         offer: pc.localDescription,
       });
 
-      // If any pending ICE candidates were queued for this peer, send them now
       if (pendingIceCandidatesRef.current.length > 0) {
         pendingIceCandidatesRef.current.forEach((c) => {
           socketRef.current.emit('ice-candidate', {
@@ -491,7 +538,6 @@ const InterviewerView = ({ roomId, userName }) => {
       await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
       console.log('✅ Remote description set from answer');
 
-      // apply any queued ICEs that arrived before remote description
       if (pendingIceCandidatesRef.current.length > 0) {
         for (const candidate of pendingIceCandidatesRef.current) {
           try {
@@ -520,7 +566,6 @@ const InterviewerView = ({ roomId, userName }) => {
         console.error('❌ Error adding ICE candidate', err);
       }
     } else {
-      // store temporarily until we have remoteDescription
       console.log('⏳ Queuing ICE candidate until remoteDescription is set');
       pendingIceCandidatesRef.current.push(data.candidate);
     }
@@ -558,7 +603,6 @@ const InterviewerView = ({ roomId, userName }) => {
   const clearAllAlerts = () => setAlerts([]);
 
   // ---------- Render ----------
-  // name entry point
   if (step === 'nameEntry') {
     return (
       <div
@@ -662,7 +706,8 @@ const InterviewerView = ({ roomId, userName }) => {
               }}
             >
               {roomId?.substring(0, 12)}...
-            </code>
+            </code>{' '}
+            | Transcript: {fullTranscript.split(' ').filter(Boolean).length} words
           </p>
         </div>
         <div
@@ -757,7 +802,7 @@ const InterviewerView = ({ roomId, userName }) => {
         </div>
       </div>
 
-      {/* NEW: End interview button */}
+      {/* End interview button */}
       <div
         style={{
           maxWidth: '1400px',
@@ -769,17 +814,18 @@ const InterviewerView = ({ roomId, userName }) => {
         <button
           onClick={markInterviewComplete}
           style={{
-            padding: '10px 18px',
+            padding: '15px 30px',
             backgroundColor: '#1976d2',
             color: 'white',
             border: 'none',
             borderRadius: 8,
             cursor: 'pointer',
-            fontSize: 14,
+            fontSize: 16,
             fontWeight: 'bold',
+            boxShadow: '0 4px 12px rgba(25,118,210,0.3)',
           }}
         >
-          End Interview & Save Result
+          ✅ End Interview & Save FULL Transcript
         </button>
       </div>
 
@@ -961,8 +1007,6 @@ const InterviewerView = ({ roomId, userName }) => {
           )}
         </div>
       </div>
-
-      {/* {step === 'meeting' && <TranscriptSaver roomId={roomId} senderRole="interviewer" />} */}
 
       <style>{`
         button:hover {
