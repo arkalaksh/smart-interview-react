@@ -1,11 +1,26 @@
-// ✅ COMPLETE FIXED InterviewerView.jsx - FULL TRANSCRIPT SAVE + NO 404 ERRORS
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import { SIGNALING_SERVER, iceServers } from '../utils/config';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 
-// ✅ API base (backend port 5000)
-const API_BASE = 'http://localhost:5000/api/auth';
+// ✅ NEW: Dynamic API_BASE (production + local)
+const getApiBase = () => {
+  if (typeof window !== 'undefined' && window.APP_CONFIG) {
+    return window.APP_CONFIG.API_BASE_URL; // From App.js ConfigProvider
+  }
+
+  const isProduction =
+    window.location.hostname !== 'localhost' &&
+    window.location.hostname !== '127.0.0.1' &&
+    !window.location.hostname.includes('localhost');
+
+  return isProduction
+    ? 'https://darkcyan-hornet-746720.hostingersite.com/api/auth'
+    : 'http://localhost:5000/api/auth';
+};
+
+const API_BASE = getApiBase();
+console.log('🔗 API_BASE:', API_BASE);
 
 // ---------- Helpers for localStorage persistence ----------
 const loadState = (key, defaultValue) => {
@@ -16,6 +31,7 @@ const loadState = (key, defaultValue) => {
     return defaultValue;
   }
 };
+
 const saveState = (key, value) => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
@@ -35,19 +51,13 @@ const InterviewerView = ({ roomId, userName }) => {
     loadState('interviewer_candidateConnected', false)
   );
 
-  // ✅ NEW: Full transcript state for auto-save + display
+  // ✅ Full transcript state for auto-save + display
   const [fullTranscript, setFullTranscript] = useState('');
 
   // persist
-  useEffect(
-    () => saveState('interviewer_connectionStatus', connectionStatus),
-    [connectionStatus]
-  );
+  useEffect(() => saveState('interviewer_connectionStatus', connectionStatus), [connectionStatus]);
   useEffect(() => saveState('interviewer_alerts', alerts), [alerts]);
-  useEffect(
-    () => saveState('interviewer_candidateConnected', candidateConnected),
-    [candidateConnected]
-  );
+  useEffect(() => saveState('interviewer_candidateConnected', candidateConnected), [candidateConnected]);
 
   // ---------- Refs ----------
   const localVideoRef = useRef(null);
@@ -61,8 +71,13 @@ const InterviewerView = ({ roomId, userName }) => {
   const mountedRef = useRef(true);
 
   // speech refs
-  const lastTranscriptRef = useRef('');     // last transcript shown in UI
-  const savedTranscriptRef = useRef('');    // transcript already saved to DB
+  const lastTranscriptRef = useRef(''); // last transcript shown in UI
+  const savedTranscriptRef = useRef(''); // transcript already saved to DB
+  const speechStartedRef = useRef(false);
+
+  // ✅ Added (you had declared in your snippet)
+  const pauseTimerRef = useRef(null);
+  const PAUSE_THRESHOLD = 10000; // 10 seconds pause threshold
 
   // ---------- Mount / Unmount ----------
   useEffect(() => {
@@ -74,6 +89,7 @@ const InterviewerView = ({ roomId, userName }) => {
       console.log('🧹 Interviewer cleaning up on unmount...');
       cleanupConnection();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Effect to initialize connection - only trigger on 'meeting' step and when interviewerName exists
@@ -82,11 +98,11 @@ const InterviewerView = ({ roomId, userName }) => {
       console.log('🔌 Initializing connection for meeting step...');
       initializeConnection();
     }
-    // Cleanup on step / interviewerName change
     return () => {
       console.log('🧹 Cleaning up connection on step/name change...');
       cleanupConnection();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, interviewerName]);
 
   // Handler for when user submits name
@@ -101,19 +117,12 @@ const InterviewerView = ({ roomId, userName }) => {
   };
 
   // ---------- Speech Recognition ----------
-  const {
-    transcript,
-    listening,
-    resetTranscript,
-    browserSupportsSpeechRecognition,
-  } = useSpeechRecognition();
+  const { transcript, listening, resetTranscript, browserSupportsSpeechRecognition } =
+    useSpeechRecognition();
 
   const [isRecording, setIsRecording] = useState(false);
   const [secondsSinceLastSpeech, setSecondsSinceLastSpeech] = useState(0);
   const [lastSpeechTime, setLastSpeechTime] = useState(Date.now());
-  const pauseTimerRef = useRef(null);
-  const PAUSE_THRESHOLD = 10000; // 10 seconds pause threshold
-  const speechStartedRef = useRef(false);
 
   // ✅ LIVE TRANSCRIPT BUILD - Updates fullTranscript as you speak
   useEffect(() => {
@@ -121,24 +130,18 @@ const InterviewerView = ({ roomId, userName }) => {
       const newText = transcript.trim();
       if (newText !== lastTranscriptRef.current) {
         setFullTranscript((prev) => {
-          const updated =
-            (prev ? prev + '\n' : '') + '[Interviewer Live]: ' + newText;
+          const updated = (prev ? prev + '\n' : '') + '[Interviewer Live]: ' + newText;
           lastTranscriptRef.current = newText;
           return updated;
         });
-        // mark this as spoken (but not necessarily saved to DB)
         setLastSpeechTime(Date.now());
       }
     }
   }, [transcript, listening]);
 
-  // Auto-start Speech Recognition Once Interviewer Has Entered Name and Step is 'meeting'
+  // Auto-start Speech Recognition Once step is 'meeting'
   useEffect(() => {
-    if (
-      step === 'meeting' &&
-      browserSupportsSpeechRecognition &&
-      !speechStartedRef.current
-    ) {
+    if (step === 'meeting' && browserSupportsSpeechRecognition && !speechStartedRef.current) {
       console.log('✅ Auto-starting speech recognition...');
       setTimeout(() => {
         startSpeechRecognition();
@@ -147,7 +150,6 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   }, [step, browserSupportsSpeechRecognition]);
 
-  // MOUNT log
   useEffect(() => {
     console.log(
       '👨‍💼 InterviewerView MOUNTED - Room ID:',
@@ -157,7 +159,6 @@ const InterviewerView = ({ roomId, userName }) => {
     );
   }, [roomId, userName]);
 
-  // ✅ startSpeechRecognition function (with proper resets)
   const startSpeechRecognition = () => {
     resetTranscript();
     savedTranscriptRef.current = '';
@@ -184,19 +185,14 @@ const InterviewerView = ({ roomId, userName }) => {
       const currentText = transcript.trim();
       if (!currentText) return;
 
-      // save ONLY new spoken part
-      const newChunk = currentText
-        .replace(savedTranscriptRef.current, '')
-        .trim();
+      const newChunk = currentText.replace(savedTranscriptRef.current, '').trim();
 
       if (newChunk.length > 0) {
         console.log('💾 Auto-saving new transcript chunk (30 sec)...', newChunk);
         saveInterviewerQuestion(newChunk);
-
-        // mark this part as saved (everything up to currentText)
         savedTranscriptRef.current = currentText;
       }
-    }, 30000); // ✅ 30 seconds
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [listening, transcript]);
@@ -213,32 +209,25 @@ const InterviewerView = ({ roomId, userName }) => {
     return () => clearInterval(interval);
   }, [listening, lastSpeechTime]);
 
-  // ✅ FIXED: API Call to Save Interviewer Name
   const saveInterviewerName = async () => {
     try {
-      const response = await fetch(
-        `${API_BASE}/rooms/update-interviewer-name`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            roomId,
-            interviewerName: interviewerName.trim(),
-          }),
-        }
-      );
+      const response = await fetch(`${API_BASE}/rooms/update-interviewer-name`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomId,
+          interviewerName: interviewerName.trim(),
+        }),
+      });
+
       const data = await response.json();
-      if (response.ok) {
-        console.log('💾 Interviewer name saved:', data.message);
-      } else {
-        console.error('❌ Failed to save interviewer name:', data.error);
-      }
+      if (response.ok) console.log('💾 Interviewer name saved:', data.message);
+      else console.error('❌ Failed to save interviewer name:', data.error);
     } catch (error) {
       console.error('❌ Network error saving interviewer name:', error);
     }
   };
 
-  // ✅ FIXED: API Call to Save Question
   const saveInterviewerQuestion = async (questionText) => {
     try {
       const response = await fetch(`${API_BASE}/questions/save`, {
@@ -252,22 +241,18 @@ const InterviewerView = ({ roomId, userName }) => {
       });
 
       const data = await response.json();
-      if (response.ok) {
-        console.log('❓ Question saved:', data.questionId);
-      } else {
-        console.error('❌ Question save error:', data.error);
-      }
+      if (response.ok) console.log('❓ Question saved:', data.questionId);
+      else console.error('❌ Question save error:', data.error);
     } catch (error) {
       console.error('❌ Network error saving question:', error);
     }
   };
 
-  // ✅ FINAL FIX: Flush pending transcript + Mark interview complete safely
   const markInterviewComplete = async () => {
     try {
       console.log('🔚 Ending interview...');
 
-      // 1️⃣ SAVE any UNSAVED live transcript before ending
+      // 1️⃣ Save any pending chunk
       const currentText = transcript.trim();
       const pendingTranscript = currentText
         ? currentText.replace(savedTranscriptRef.current, '').trim()
@@ -276,60 +261,42 @@ const InterviewerView = ({ roomId, userName }) => {
       if (pendingTranscript.length > 0) {
         console.log('💾 Saving last pending transcript chunk...', pendingTranscript);
         await saveInterviewerQuestion(pendingTranscript);
-        savedTranscriptRef.current =
-          (savedTranscriptRef.current + ' ' + pendingTranscript).trim();
+        savedTranscriptRef.current = (savedTranscriptRef.current + ' ' + pendingTranscript).trim();
       }
 
-      // 2️⃣ Prepare FULL transcript (prefer UI fullTranscript, fallback to savedTranscriptRef)
+      // 2️⃣ Prepare final transcript
       const fromSaved = savedTranscriptRef.current?.trim() || '';
       const fromLive = fullTranscript?.trim() || '';
       const finalTranscript = fromLive || fromSaved;
 
-      if (!finalTranscript) {
-        console.warn('⚠️ Transcript is empty, completing interview without transcript');
-      } else {
-        console.log(
-          '📜 Final transcript preview:',
-          finalTranscript.substring(0, 100) + '...'
-        );
-      }
-
-      // 3️⃣ Mark interview COMPLETE + send FULL transcript (or null)
-      const completeResponse = await fetch(
-        `${API_BASE}/interviews/${roomId}/complete`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            transcript: finalTranscript || null,
-            completedAt: new Date().toISOString(),
-          }),
-        }
-      );
+      // 3️⃣ Mark interview complete
+      const completeResponse = await fetch(`${API_BASE}/interviews/${roomId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript: finalTranscript || null,
+          completedAt: new Date().toISOString(),
+        }),
+      });
 
       const completeData = await completeResponse.json();
-
-      if (!completeResponse.ok) {
-        throw new Error(completeData?.error || 'Failed to complete interview');
-      }
+      if (!completeResponse.ok) throw new Error(completeData?.error || 'Failed to complete interview');
 
       console.log('✅ Interview COMPLETED + FULL TRANSCRIPT SAVED');
 
-      // 4️⃣ Stop speech recognition (IMPORTANT)
+      // 4️⃣ Stop speech recognition
       SpeechRecognition.stopListening();
 
-      // 5️⃣ Cleanup WebRTC + Socket
+      // 5️⃣ Cleanup
       cleanupConnection();
 
       // 6️⃣ Notify candidate
       socketRef.current?.emit('end-interview', { roomId });
 
-      // 7️⃣ Redirect success
-      const wordCount = finalTranscript ? finalTranscript.split(' ').length : 0;
+      // 7️⃣ UI
+      const wordCount = finalTranscript ? finalTranscript.split(' ').filter(Boolean).length : 0;
       alert(
-        `✅ Interview COMPLETED${
-          finalTranscript ? ' & FULL TRANSCRIPT SAVED' : ''
-        }!\n\nRoom: ${roomId}\nWords: ${wordCount}`
+        `✅ Interview COMPLETED${finalTranscript ? ' & FULL TRANSCRIPT SAVED' : ''}!\n\nRoom: ${roomId}\nWords: ${wordCount}`
       );
 
       window.location.href = '#/calendar-view';
@@ -347,13 +314,15 @@ const InterviewerView = ({ roomId, userName }) => {
         video: { width: 1280, height: 720 },
         audio: true,
       });
+
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
       setConnectionStatus('Camera ready');
 
       console.log('🔌 Creating socket connection to:', SIGNALING_SERVER);
       const socket = io(SIGNALING_SERVER, {
-        transports: ['polling'],
+        transports: ['websocket', 'polling'],
+        withCredentials: true,
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
@@ -361,7 +330,6 @@ const InterviewerView = ({ roomId, userName }) => {
 
       socketRef.current = socket;
 
-      // socket events
       socket.on('connect', () => {
         console.log('✅ Socket connected:', socket.id);
         setConnectionStatus('Connected');
@@ -371,11 +339,9 @@ const InterviewerView = ({ roomId, userName }) => {
       socket.on('room-joined', (data) => {
         console.log('✅ room-joined:', data);
         setConnectionStatus('Waiting for candidate...');
+
         if (data.otherPeerId) {
-          console.log(
-            '🔁 Candidate already in room -> initiating offer to',
-            data.otherPeerId
-          );
+          console.log('🔁 Candidate already in room -> initiating offer to', data.otherPeerId);
           remotePeerIdRef.current = data.otherPeerId;
           setCandidateConnected(true);
           createOffer(data.otherPeerId);
@@ -383,7 +349,7 @@ const InterviewerView = ({ roomId, userName }) => {
       });
 
       socket.on('peer-joined', (data) => {
-        console.log('✅ peer-joined event (new peer):', data);
+        console.log('✅ peer-joined (new peer):', data);
         remotePeerIdRef.current = data.socketId;
         setCandidateConnected(true);
         createOffer(data.socketId);
@@ -400,9 +366,6 @@ const InterviewerView = ({ roomId, userName }) => {
           timestamp: new Date().toISOString(),
         };
         setAlerts((prev) => [fullAlert, ...prev]);
-        if (alertData.type === 'AI_DETECTION_RESULT') {
-          console.log('🤖 AI Score:', alertData.aiData?.aiScore);
-        }
       });
 
       socket.on('disconnect', (reason) => {
@@ -458,28 +421,24 @@ const InterviewerView = ({ roomId, userName }) => {
       if (ev.candidate && socketRef.current) {
         const targetId = remotePeerIdRef.current;
         if (targetId) {
-          console.log('🧊 sending ice-candidate to', targetId);
           socketRef.current.emit('ice-candidate', {
             candidate: ev.candidate,
             targetId,
           });
         } else {
-          console.warn('⚠️ no target peerId to send ICE to yet');
+          pendingIceCandidatesRef.current.push(ev.candidate);
         }
       }
     };
 
     pc.onnegotiationneeded = async () => {
       try {
-        console.log('♻️ onnegotiationneeded triggered');
         const targetId = remotePeerIdRef.current;
-        if (!targetId) {
-          console.warn('⚠️ No remote peer id for negotiation');
-          return;
-        }
+        if (!targetId) return;
+
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        console.log('📤 Emitting offer during negotiationneeded to', targetId);
+
         socketRef.current?.emit('offer', {
           targetId,
           offer: pc.localDescription,
@@ -496,10 +455,7 @@ const InterviewerView = ({ roomId, userName }) => {
   const createOffer = async (peerId) => {
     try {
       console.log('📤 createOffer -> peerId:', peerId);
-      if (!socketRef.current) {
-        console.error('❌ Socket not initialized');
-        return;
-      }
+      if (!socketRef.current) return;
 
       remotePeerIdRef.current = peerId;
       const pc = createPeerConnection(peerId);
@@ -512,6 +468,7 @@ const InterviewerView = ({ roomId, userName }) => {
         offer: pc.localDescription,
       });
 
+      // flush pending ICE if any
       if (pendingIceCandidatesRef.current.length > 0) {
         pendingIceCandidatesRef.current.forEach((c) => {
           socketRef.current.emit('ice-candidate', {
@@ -531,18 +488,14 @@ const InterviewerView = ({ roomId, userName }) => {
     console.log('📨 handleAnswer', data);
     try {
       const pc = peerConnectionRef.current;
-      if (!pc) {
-        console.error('❌ No peerConnection to set remote description on');
-        return;
-      }
+      if (!pc) return;
+
       await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-      console.log('✅ Remote description set from answer');
 
       if (pendingIceCandidatesRef.current.length > 0) {
         for (const candidate of pendingIceCandidatesRef.current) {
           try {
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
-            console.log('✅ Applied queued ICE candidate');
           } catch (err) {
             console.warn('⚠️ Failed to add queued ICE candidate', err);
           }
@@ -556,24 +509,26 @@ const InterviewerView = ({ roomId, userName }) => {
 
   // ---------- Handle incoming ICE candidate ----------
   const handleIceCandidate = async (data) => {
-    console.log('🧊 Received ICE candidate', !!data?.candidate);
     const pc = peerConnectionRef.current;
+    if (!data?.candidate) return;
+
     if (pc && pc.remoteDescription && pc.remoteDescription.type) {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-        console.log('✅ ICE candidate added to pc');
       } catch (err) {
         console.error('❌ Error adding ICE candidate', err);
       }
     } else {
-      console.log('⏳ Queuing ICE candidate until remoteDescription is set');
       pendingIceCandidatesRef.current.push(data.candidate);
     }
   };
 
   // ---------- Cleanup ----------
   const cleanupConnection = () => {
-    console.log('🧹 cleanupConnection()');
+    try {
+      if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current);
+    } catch (e) {}
+
     try {
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
@@ -597,9 +552,7 @@ const InterviewerView = ({ roomId, userName }) => {
   };
 
   // ---------- Alert helpers ----------
-  const clearAlert = (alertId) => {
-    setAlerts((prev) => prev.filter((a) => a.id !== alertId));
-  };
+  const clearAlert = (alertId) => setAlerts((prev) => prev.filter((a) => a.id !== alertId));
   const clearAllAlerts = () => setAlerts([]);
 
   // ---------- Render ----------
@@ -627,6 +580,7 @@ const InterviewerView = ({ roomId, userName }) => {
           }}
         >
           <h2 style={{ marginBottom: 20 }}>Enter Your Name</h2>
+
           <input
             type="text"
             placeholder="Your full name"
@@ -644,6 +598,7 @@ const InterviewerView = ({ roomId, userName }) => {
               boxSizing: 'border-box',
             }}
           />
+
           <button
             onClick={handleNameSubmit}
             disabled={!interviewerName.trim()}
@@ -687,16 +642,8 @@ const InterviewerView = ({ roomId, userName }) => {
         }}
       >
         <div>
-          <h1 style={{ margin: 0, fontSize: '24px', color: '#333' }}>
-            👨‍💼 Interviewer Dashboard
-          </h1>
-          <p
-            style={{
-              margin: '5px 0 0 0',
-              fontSize: '14px',
-              color: '#666',
-            }}
-          >
+          <h1 style={{ margin: 0, fontSize: '24px', color: '#333' }}>👨‍💼 Interviewer Dashboard</h1>
+          <p style={{ margin: '5px 0 0 0', fontSize: '14px', color: '#666' }}>
             Room:{' '}
             <code
               style={{
@@ -709,7 +656,12 @@ const InterviewerView = ({ roomId, userName }) => {
             </code>{' '}
             | Transcript: {fullTranscript.split(' ').filter(Boolean).length} words
           </p>
+          <p style={{ margin: '5px 0 0 0', fontSize: '12px', color: '#888' }}>
+            Status: {connectionStatus} {isRecording ? ' | 🎤 Recording' : ''}{' '}
+            {listening ? ` | Silent: ${secondsSinceLastSpeech}s` : ''}
+          </p>
         </div>
+
         <div
           style={{
             padding: '10px 20px',
@@ -720,9 +672,7 @@ const InterviewerView = ({ roomId, userName }) => {
             fontSize: '14px',
           }}
         >
-          {candidateConnected
-            ? '✅ Candidate Connected'
-            : '⏳ Waiting for Candidate'}
+          {candidateConnected ? '✅ Candidate Connected' : '⏳ Waiting for Candidate'}
         </div>
       </div>
 
@@ -842,6 +792,7 @@ const InterviewerView = ({ roomId, userName }) => {
           <h2 style={{ margin: 0, fontSize: '20px', color: '#333' }}>
             🚨 Monitoring Alerts ({alerts.length})
           </h2>
+
           {alerts.length > 0 && (
             <button
               onClick={clearAllAlerts}
@@ -872,13 +823,7 @@ const InterviewerView = ({ roomId, userName }) => {
           }}
         >
           {alerts.length === 0 ? (
-            <p
-              style={{
-                textAlign: 'center',
-                color: '#999',
-                margin: '40px 0',
-              }}
-            >
+            <p style={{ textAlign: 'center', color: '#999', margin: '40px 0' }}>
               No alerts yet. Monitoring is active.
             </p>
           ) : (
@@ -898,49 +843,31 @@ const InterviewerView = ({ roomId, userName }) => {
                       ? '#ffc107'
                       : '#2196f3'
                   }`,
-                  backgroundColor: `${
+                  backgroundColor:
                     alert.severity === 'critical'
                       ? '#ffebee'
                       : alert.severity === 'high'
                       ? '#fff3e0'
                       : alert.severity === 'medium'
                       ? '#fff9c4'
-                      : '#e3f2fd'
-                  }`,
+                      : '#e3f2fd',
                   position: 'relative',
                 }}
               >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'start',
-                  }}
-                >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                   <div style={{ flex: 1 }}>
-                    <div
-                      style={{
-                        fontWeight: 'bold',
-                        marginBottom: '5px',
-                        color: '#333',
-                      }}
-                    >
-                      {alert.type === 'AI_DETECTION_RESULT' &&
-                        '🤖 AI Detection Result'}
-                      {alert.type === 'LOOKING_AWAY' &&
-                        '👁️ Eye Tracking Alert'}
-                      {alert.type === 'TAB_SWITCHED' &&
-                        '⚠️ Tab Switch Detected'}
+                    <div style={{ fontWeight: 'bold', marginBottom: '5px', color: '#333' }}>
+                      {alert.type === 'AI_DETECTION_RESULT' && '🤖 AI Detection Result'}
+                      {alert.type === 'LOOKING_AWAY' && '👁️ Eye Tracking Alert'}
+                      {alert.type === 'TAB_SWITCHED' && '⚠️ Tab Switch Detected'}
+                      {!['AI_DETECTION_RESULT', 'LOOKING_AWAY', 'TAB_SWITCHED'].includes(alert.type) &&
+                        alert.type}
                     </div>
-                    <div
-                      style={{
-                        fontSize: '14px',
-                        color: '#555',
-                        marginBottom: '8px',
-                      }}
-                    >
+
+                    <div style={{ fontSize: '14px', color: '#555', marginBottom: '8px' }}>
                       {alert.message}
                     </div>
+
                     {alert.aiData && (
                       <div
                         style={{
@@ -956,37 +883,19 @@ const InterviewerView = ({ roomId, userName }) => {
                           <strong>AI Score:</strong> {alert.aiData.aiScore}%
                         </div>
                         <div>
-                          <strong>Method:</strong>{' '}
-                          {alert.aiData.detectionMethod}
+                          <strong>Method:</strong> {alert.aiData.detectionMethod}
                         </div>
                         <div>
                           <strong>Words:</strong> {alert.aiData.wordCount}
                         </div>
-                        {alert.aiData.textAnalyzed && (
-                          <div
-                            style={{
-                              marginTop: '5px',
-                              fontStyle: 'italic',
-                              color: '#888',
-                            }}
-                          >
-                            "
-                            {alert.aiData.textAnalyzed.substring(0, 100)}
-                            ..."
-                          </div>
-                        )}
                       </div>
                     )}
-                    <div
-                      style={{
-                        fontSize: '11px',
-                        color: '#999',
-                        marginTop: '5px',
-                      }}
-                    >
+
+                    <div style={{ fontSize: '11px', color: '#999', marginTop: '5px' }}>
                       {new Date(alert.timestamp).toLocaleString()}
                     </div>
                   </div>
+
                   <button
                     onClick={() => clearAlert(alert.id)}
                     style={{
@@ -1009,9 +918,7 @@ const InterviewerView = ({ roomId, userName }) => {
       </div>
 
       <style>{`
-        button:hover {
-          opacity: 0.9;
-        }
+        button:hover { opacity: 0.9; }
       `}</style>
     </div>
   );
