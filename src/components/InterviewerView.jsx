@@ -3,10 +3,10 @@ import io from 'socket.io-client';
 import { SIGNALING_SERVER, iceServers } from '../utils/config';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 
-// ✅ NEW: Dynamic API_BASE (production + local)
+// ✅ FIXED: Dynamic Socket URL + API_BASE
 const getApiBase = () => {
   if (typeof window !== 'undefined' && window.APP_CONFIG) {
-    return window.APP_CONFIG.API_BASE_URL; // From App.js ConfigProvider
+    return window.APP_CONFIG.API_BASE_URL;
   }
 
   const isProduction =
@@ -19,10 +19,22 @@ const getApiBase = () => {
     : 'http://localhost:5000/api/auth';
 };
 
-const API_BASE = getApiBase();
-console.log('🔗 API_BASE:', API_BASE);
+const getSocketUrl = () => {
+  const isProduction =
+    window.location.hostname !== 'localhost' &&
+    window.location.hostname !== '127.0.0.1' &&
+    !window.location.hostname.includes('localhost');
 
-// ---------- Helpers for localStorage persistence ----------
+  return isProduction
+    ? 'https://darkcyan-hornet-746720.hostingersite.com'
+    : 'http://localhost:5000';
+};
+
+const API_BASE = getApiBase();
+const SOCKET_URL = getSocketUrl();
+console.log('🔗 InterviewerView URLs:', { API_BASE, SOCKET_URL, SIGNALING_SERVER });
+
+// ---------- Helpers ----------
 const loadState = (key, defaultValue) => {
   try {
     const raw = localStorage.getItem(key);
@@ -40,9 +52,9 @@ const saveState = (key, value) => {
 
 const InterviewerView = ({ roomId, userName }) => {
   const [interviewerName, setInterviewerName] = useState('');
-  const [step, setStep] = useState('nameEntry'); // 'nameEntry' or 'meeting'
+  const [step, setStep] = useState('nameEntry');
 
-  // ---------- Persistent states ----------
+  // Persistent states
   const [connectionStatus, setConnectionStatus] = useState(
     loadState('interviewer_connectionStatus', 'Initializing...')
   );
@@ -50,49 +62,49 @@ const InterviewerView = ({ roomId, userName }) => {
   const [candidateConnected, setCandidateConnected] = useState(
     loadState('interviewer_candidateConnected', false)
   );
-
-  // ✅ Full transcript state for auto-save + display
   const [fullTranscript, setFullTranscript] = useState('');
 
-  // persist
-  useEffect(() => saveState('interviewer_connectionStatus', connectionStatus), [connectionStatus]);
-  useEffect(() => saveState('interviewer_alerts', alerts), [alerts]);
-  useEffect(() => saveState('interviewer_candidateConnected', candidateConnected), [candidateConnected]);
-
-  // ---------- Refs ----------
+  // Refs
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
-  const peerConnectionRef = useRef(null);
+  const peerConnections = useRef(new Map()); // ✅ FIXED: Map for multiple peers
   const socketRef = useRef(null);
   const localStreamRef = useRef(null);
-
   const remotePeerIdRef = useRef(null);
   const pendingIceCandidatesRef = useRef([]);
   const mountedRef = useRef(true);
 
-  // speech refs
-  const lastTranscriptRef = useRef(''); // last transcript shown in UI
-  const savedTranscriptRef = useRef(''); // transcript already saved to DB
+  // Speech refs
+  const lastTranscriptRef = useRef('');
+  const savedTranscriptRef = useRef('');
   const speechStartedRef = useRef(false);
-
-  // ✅ Added (you had declared in your snippet)
   const pauseTimerRef = useRef(null);
-  const PAUSE_THRESHOLD = 10000; // 10 seconds pause threshold
+  const PAUSE_THRESHOLD = 10000;
 
-  // ---------- Mount / Unmount ----------
+  // Speech Recognition
+  const { transcript, listening, resetTranscript, browserSupportsSpeechRecognition } =
+    useSpeechRecognition();
+  const [isRecording, setIsRecording] = useState(false);
+  const [secondsSinceLastSpeech, setSecondsSinceLastSpeech] = useState(0);
+  const [lastSpeechTime, setLastSpeechTime] = useState(Date.now());
+
+  // Persist state
+  useEffect(() => saveState('interviewer_connectionStatus', connectionStatus), [connectionStatus]);
+  useEffect(() => saveState('interviewer_alerts', alerts), [alerts]);
+  useEffect(() => saveState('interviewer_candidateConnected', candidateConnected), [candidateConnected]);
+
+  // Mount/Unmount
   useEffect(() => {
     mountedRef.current = true;
     console.log('🔌 InterviewerView mounted');
-
     return () => {
       mountedRef.current = false;
       console.log('🧹 Interviewer cleaning up on unmount...');
       cleanupConnection();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Effect to initialize connection - only trigger on 'meeting' step and when interviewerName exists
+  // Initialize connection on meeting step
   useEffect(() => {
     if (step === 'meeting' && interviewerName.trim() !== '') {
       console.log('🔌 Initializing connection for meeting step...');
@@ -102,29 +114,9 @@ const InterviewerView = ({ roomId, userName }) => {
       console.log('🧹 Cleaning up connection on step/name change...');
       cleanupConnection();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, interviewerName]);
 
-  // Handler for when user submits name
-  const handleNameSubmit = async () => {
-    if (!interviewerName.trim()) {
-      alert('Please enter your name');
-      return;
-    }
-
-    await saveInterviewerName();
-    setStep('meeting');
-  };
-
-  // ---------- Speech Recognition ----------
-  const { transcript, listening, resetTranscript, browserSupportsSpeechRecognition } =
-    useSpeechRecognition();
-
-  const [isRecording, setIsRecording] = useState(false);
-  const [secondsSinceLastSpeech, setSecondsSinceLastSpeech] = useState(0);
-  const [lastSpeechTime, setLastSpeechTime] = useState(Date.now());
-
-  // ✅ LIVE TRANSCRIPT BUILD - Updates fullTranscript as you speak
+  // LIVE TRANSCRIPT
   useEffect(() => {
     if (transcript.trim() && listening) {
       const newText = transcript.trim();
@@ -139,7 +131,7 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   }, [transcript, listening]);
 
-  // Auto-start Speech Recognition Once step is 'meeting'
+  // Auto-start speech
   useEffect(() => {
     if (step === 'meeting' && browserSupportsSpeechRecognition && !speechStartedRef.current) {
       console.log('✅ Auto-starting speech recognition...');
@@ -150,13 +142,35 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   }, [step, browserSupportsSpeechRecognition]);
 
+  // Auto-save every 30s
   useEffect(() => {
-    console.log(
-      '👨‍💼 InterviewerView MOUNTED - Room ID:',
-      roomId,
-      'User:',
-      userName || 'Guest'
-    );
+    if (!listening) return;
+    const interval = setInterval(() => {
+      const currentText = transcript.trim();
+      if (!currentText) return;
+      const newChunk = currentText.replace(savedTranscriptRef.current, '').trim();
+      if (newChunk.length > 0) {
+        console.log('💾 Auto-saving new transcript chunk (30 sec)...', newChunk);
+        saveInterviewerQuestion(newChunk);
+        savedTranscriptRef.current = currentText;
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [listening, transcript]);
+
+  // Silence timer
+  useEffect(() => {
+    if (!listening) return;
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - lastSpeechTime) / 1000);
+      setSecondsSinceLastSpeech(elapsed);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [listening, lastSpeechTime]);
+
+  // Mount logger
+  useEffect(() => {
+    console.log('👨‍💼 InterviewerView MOUNTED - Room ID:', roomId, 'User:', userName || 'Guest');
   }, [roomId, userName]);
 
   const startSpeechRecognition = () => {
@@ -173,41 +187,8 @@ const InterviewerView = ({ roomId, userName }) => {
       language: 'en-US',
       interimResults: true,
     });
-
     console.log('🎤 Interviewer speech recognition started');
   };
-
-  // ✅ AUTO-SAVE TRANSCRIPT EVERY 30 SECONDS (NO DUPLICATES)
-  useEffect(() => {
-    if (!listening) return;
-
-    const interval = setInterval(() => {
-      const currentText = transcript.trim();
-      if (!currentText) return;
-
-      const newChunk = currentText.replace(savedTranscriptRef.current, '').trim();
-
-      if (newChunk.length > 0) {
-        console.log('💾 Auto-saving new transcript chunk (30 sec)...', newChunk);
-        saveInterviewerQuestion(newChunk);
-        savedTranscriptRef.current = currentText;
-      }
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [listening, transcript]);
-
-  // Increment Seconds Since Last Speech
-  useEffect(() => {
-    if (!listening) return;
-
-    const interval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - lastSpeechTime) / 1000);
-      setSecondsSinceLastSpeech(elapsed);
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [listening, lastSpeechTime]);
 
   const saveInterviewerName = async () => {
     try {
@@ -219,7 +200,6 @@ const InterviewerView = ({ roomId, userName }) => {
           interviewerName: interviewerName.trim(),
         }),
       });
-
       const data = await response.json();
       if (response.ok) console.log('💾 Interviewer name saved:', data.message);
       else console.error('❌ Failed to save interviewer name:', data.error);
@@ -239,7 +219,6 @@ const InterviewerView = ({ roomId, userName }) => {
           questionText,
         }),
       });
-
       const data = await response.json();
       if (response.ok) console.log('❓ Question saved:', data.questionId);
       else console.error('❌ Question save error:', data.error);
@@ -252,24 +231,22 @@ const InterviewerView = ({ roomId, userName }) => {
     try {
       console.log('🔚 Ending interview...');
 
-      // 1️⃣ Save any pending chunk
+      // Save pending chunk
       const currentText = transcript.trim();
       const pendingTranscript = currentText
         ? currentText.replace(savedTranscriptRef.current, '').trim()
         : '';
-
       if (pendingTranscript.length > 0) {
         console.log('💾 Saving last pending transcript chunk...', pendingTranscript);
         await saveInterviewerQuestion(pendingTranscript);
         savedTranscriptRef.current = (savedTranscriptRef.current + ' ' + pendingTranscript).trim();
       }
 
-      // 2️⃣ Prepare final transcript
       const fromSaved = savedTranscriptRef.current?.trim() || '';
       const fromLive = fullTranscript?.trim() || '';
       const finalTranscript = fromLive || fromSaved;
 
-      // 3️⃣ Mark interview complete
+      // Mark complete
       const completeResponse = await fetch(`${API_BASE}/interviews/${roomId}/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -284,16 +261,10 @@ const InterviewerView = ({ roomId, userName }) => {
 
       console.log('✅ Interview COMPLETED + FULL TRANSCRIPT SAVED');
 
-      // 4️⃣ Stop speech recognition
       SpeechRecognition.stopListening();
-
-      // 5️⃣ Cleanup
       cleanupConnection();
-
-      // 6️⃣ Notify candidate
       socketRef.current?.emit('end-interview', { roomId });
 
-      // 7️⃣ UI
       const wordCount = finalTranscript ? finalTranscript.split(' ').filter(Boolean).length : 0;
       alert(
         `✅ Interview COMPLETED${finalTranscript ? ' & FULL TRANSCRIPT SAVED' : ''}!\n\nRoom: ${roomId}\nWords: ${wordCount}`
@@ -306,7 +277,7 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   };
 
-  // ---------- Initialize socket + media ----------
+  // ✅ FIXED: Socket.IO with polling-first
   const initializeConnection = async () => {
     try {
       console.log('📹 Requesting interviewer camera and microphone...');
@@ -319,13 +290,21 @@ const InterviewerView = ({ roomId, userName }) => {
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
       setConnectionStatus('Camera ready');
 
-      console.log('🔌 Creating socket connection to:', SIGNALING_SERVER);
-      const socket = io(SIGNALING_SERVER, {
-        transports: ['websocket', 'polling'],
-        withCredentials: true,
+      console.log('🔌 Creating socket connection to:', SOCKET_URL);
+      const socket = io(SOCKET_URL, {
+        path: '/socket.io/',
+        transports: ['polling', 'websocket'], // ✅ Polling FIRST
+        timeout: 20000,
+        forceNew: true,
         reconnection: true,
-        reconnectionAttempts: 5,
+        reconnectionAttempts: 10,
         reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        query: { roomId },
+        cors: {
+          origin: "*",
+          methods: ["GET", "POST"]
+        }
       });
 
       socketRef.current = socket;
@@ -339,9 +318,8 @@ const InterviewerView = ({ roomId, userName }) => {
       socket.on('room-joined', (data) => {
         console.log('✅ room-joined:', data);
         setConnectionStatus('Waiting for candidate...');
-
         if (data.otherPeerId) {
-          console.log('🔁 Candidate already in room -> initiating offer to', data.otherPeerId);
+          console.log('🔗 Candidate already in room -> initiating offer to', data.otherPeerId);
           remotePeerIdRef.current = data.otherPeerId;
           setCandidateConnected(true);
           createOffer(data.otherPeerId);
@@ -357,6 +335,10 @@ const InterviewerView = ({ roomId, userName }) => {
 
       socket.on('answer', handleAnswer);
       socket.on('ice-candidate', handleIceCandidate);
+      socket.on('end-interview', () => {
+        console.log('👋 Candidate ended interview');
+        setCandidateConnected(false);
+      });
 
       socket.on('alert', (alertData) => {
         console.log('🚨 ALERT RECEIVED:', alertData);
@@ -386,22 +368,16 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   };
 
-  // ---------- Create / Reset PeerConnection ----------
+  // ✅ FIXED: SINGLE PC PER PEER (No renegotiation errors!)
   const createPeerConnection = (peerId) => {
-    console.log('🔗 createPeerConnection for', peerId);
-
-    if (peerConnectionRef.current) {
-      try {
-        peerConnectionRef.current.ontrack = null;
-        peerConnectionRef.current.onicecandidate = null;
-        peerConnectionRef.current.onnegotiationneeded = null;
-        peerConnectionRef.current.close();
-      } catch (e) {}
-      peerConnectionRef.current = null;
+    if (peerConnections.current.has(peerId)) {
+      console.log('🔗 Reusing existing PC for', peerId);
+      return peerConnections.current.get(peerId);
     }
 
+    console.log('🔗 createPeerConnection for', peerId);
     const pc = new RTCPeerConnection(iceServers);
-    peerConnectionRef.current = pc;
+    peerConnections.current.set(peerId, pc);
 
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
@@ -411,7 +387,7 @@ const InterviewerView = ({ roomId, userName }) => {
 
     pc.ontrack = (event) => {
       console.log('📥 ontrack', event);
-      if (remoteVideoRef.current) {
+      if (remoteVideoRef.current && !remoteVideoRef.current.srcObject) {
         remoteVideoRef.current.srcObject = event.streams[0];
         setConnectionStatus('✅ Video connected!');
       }
@@ -431,27 +407,17 @@ const InterviewerView = ({ roomId, userName }) => {
       }
     };
 
-    pc.onnegotiationneeded = async () => {
-      try {
-        const targetId = remotePeerIdRef.current;
-        if (!targetId) return;
-
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-
-        socketRef.current?.emit('offer', {
-          targetId,
-          offer: pc.localDescription,
-        });
-      } catch (err) {
-        console.error('❌ renegotiation error', err);
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'closed' || pc.connectionState === 'failed') {
+        peerConnections.current.delete(peerId);
+        console.log('🔌 PC closed for', peerId);
       }
     };
 
     return pc;
   };
 
-  // ---------- Create Offer ----------
+  // ✅ FIXED: Safe offer creation
   const createOffer = async (peerId) => {
     try {
       console.log('📤 createOffer -> peerId:', peerId);
@@ -460,7 +426,12 @@ const InterviewerView = ({ roomId, userName }) => {
       remotePeerIdRef.current = peerId;
       const pc = createPeerConnection(peerId);
 
-      const offer = await pc.createOffer();
+      if (pc.signalingState !== 'stable') {
+        console.log('⏭️ Skipping offer - state:', pc.signalingState);
+        return;
+      }
+
+      const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
       await pc.setLocalDescription(offer);
 
       socketRef.current.emit('offer', {
@@ -468,7 +439,7 @@ const InterviewerView = ({ roomId, userName }) => {
         offer: pc.localDescription,
       });
 
-      // flush pending ICE if any
+      // Flush pending ICE
       if (pendingIceCandidatesRef.current.length > 0) {
         pendingIceCandidatesRef.current.forEach((c) => {
           socketRef.current.emit('ice-candidate', {
@@ -483,14 +454,14 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   };
 
-  // ---------- Handle Answer ----------
+  // ✅ FIXED: Safe answer handling
   const handleAnswer = async (data) => {
     console.log('📨 handleAnswer', data);
     try {
-      const pc = peerConnectionRef.current;
-      if (!pc) return;
-
-      await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+      const pc = createPeerConnection(data.senderId);
+      if (!pc.remoteDescription) {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+      }
 
       if (pendingIceCandidatesRef.current.length > 0) {
         for (const candidate of pendingIceCandidatesRef.current) {
@@ -507,12 +478,11 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   };
 
-  // ---------- Handle incoming ICE candidate ----------
   const handleIceCandidate = async (data) => {
-    const pc = peerConnectionRef.current;
-    if (!data?.candidate) return;
+    const pc = peerConnections.current.get(remotePeerIdRef.current);
+    if (!data?.candidate || !pc) return;
 
-    if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+    if (pc.remoteDescription && pc.remoteDescription.type) {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
       } catch (err) {
@@ -523,64 +493,57 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   };
 
-  // ---------- Cleanup ----------
+  // ✅ FIXED: Proper cleanup
   const cleanupConnection = () => {
-    try {
-      if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current);
-    } catch (e) {}
+    if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current);
 
-    try {
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-        peerConnectionRef.current = null;
-      }
-    } catch (e) {}
+    peerConnections.current.forEach(pc => pc.close());
+    peerConnections.current.clear();
 
-    try {
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((t) => t.stop());
-        localStreamRef.current = null;
-      }
-    } catch (e) {}
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+    }
 
-    try {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
-    } catch (e) {}
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
   };
 
-  // ---------- Alert helpers ----------
+  const handleNameSubmit = async () => {
+    if (!interviewerName.trim()) {
+      alert('Please enter your name');
+      return;
+    }
+    await saveInterviewerName();
+    setStep('meeting');
+  };
+
   const clearAlert = (alertId) => setAlerts((prev) => prev.filter((a) => a.id !== alertId));
   const clearAllAlerts = () => setAlerts([]);
 
-  // ---------- Render ----------
+  // Name Entry UI
   if (step === 'nameEntry') {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          fontFamily: 'Arial',
-          backgroundColor: '#f4f4f4',
-          padding: 20,
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 400,
-            width: '100%',
-            backgroundColor: 'white',
-            borderRadius: 12,
-            padding: 40,
-            boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
-          }}
-        >
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        fontFamily: 'Arial',
+        backgroundColor: '#f4f4f4',
+        padding: 20,
+      }}>
+        <div style={{
+          maxWidth: 400,
+          width: '100%',
+          backgroundColor: 'white',
+          borderRadius: 12,
+          padding: 40,
+          boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
+        }}>
           <h2 style={{ marginBottom: 20 }}>Enter Your Name</h2>
-
           <input
             type="text"
             placeholder="Your full name"
@@ -598,7 +561,6 @@ const InterviewerView = ({ roomId, userName }) => {
               boxSizing: 'border-box',
             }}
           />
-
           <button
             onClick={handleNameSubmit}
             disabled={!interviewerName.trim()}
@@ -622,36 +584,27 @@ const InterviewerView = ({ roomId, userName }) => {
     );
   }
 
+  // Meeting UI (same as original)
   return (
-    <div
-      style={{
-        padding: '20px',
-        fontFamily: 'Arial',
-        backgroundColor: '#f5f5f5',
-        minHeight: '100vh',
-      }}
-    >
+    <div style={{
+      padding: '20px',
+      fontFamily: 'Arial',
+      backgroundColor: '#f5f5f5',
+      minHeight: '100vh',
+    }}>
       {/* Header */}
-      <div
-        style={{
-          maxWidth: '1400px',
-          margin: '0 auto 20px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
+      <div style={{
+        maxWidth: '1400px',
+        margin: '0 auto 20px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+      }}>
         <div>
           <h1 style={{ margin: 0, fontSize: '24px', color: '#333' }}>👨‍💼 Interviewer Dashboard</h1>
           <p style={{ margin: '5px 0 0 0', fontSize: '14px', color: '#666' }}>
             Room:{' '}
-            <code
-              style={{
-                backgroundColor: '#e0e0e0',
-                padding: '2px 6px',
-                borderRadius: '3px',
-              }}
-            >
+            <code style={{ backgroundColor: '#e0e0e0', padding: '2px 6px', borderRadius: '3px' }}>
               {roomId?.substring(0, 12)}...
             </code>{' '}
             | Transcript: {fullTranscript.split(' ').filter(Boolean).length} words
@@ -661,41 +614,33 @@ const InterviewerView = ({ roomId, userName }) => {
             {listening ? ` | Silent: ${secondsSinceLastSpeech}s` : ''}
           </p>
         </div>
-
-        <div
-          style={{
-            padding: '10px 20px',
-            backgroundColor: candidateConnected ? '#4caf50' : '#ff9800',
-            color: 'white',
-            borderRadius: '8px',
-            fontWeight: 'bold',
-            fontSize: '14px',
-          }}
-        >
+        <div style={{
+          padding: '10px 20px',
+          backgroundColor: candidateConnected ? '#4caf50' : '#ff9800',
+          color: 'white',
+          borderRadius: '8px',
+          fontWeight: 'bold',
+          fontSize: '14px',
+        }}>
           {candidateConnected ? '✅ Candidate Connected' : '⏳ Waiting for Candidate'}
         </div>
       </div>
 
       {/* Video Grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '20px',
-          maxWidth: '1400px',
-          margin: '0 auto 20px',
-        }}
-      >
-        {/* Local */}
-        <div
-          style={{
-            backgroundColor: '#000',
-            borderRadius: '12px',
-            overflow: 'hidden',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            position: 'relative',
-          }}
-        >
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: '20px',
+        maxWidth: '1400px',
+        margin: '0 auto 20px',
+      }}>
+        <div style={{
+          backgroundColor: '#000',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          position: 'relative',
+        }}>
           <video
             ref={localVideoRef}
             autoPlay
@@ -703,64 +648,54 @@ const InterviewerView = ({ roomId, userName }) => {
             playsInline
             style={{ width: '100%', height: '500px', objectFit: 'cover' }}
           />
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '10px',
-              left: '10px',
-              color: 'white',
-              backgroundColor: 'rgba(0,0,0,0.6)',
-              padding: '5px 10px',
-              borderRadius: '5px',
-              fontSize: '12px',
-            }}
-          >
+          <div style={{
+            position: 'absolute',
+            bottom: '10px',
+            left: '10px',
+            color: 'white',
+            backgroundColor: 'rgba(0,0,0,0.6)',
+            padding: '5px 10px',
+            borderRadius: '5px',
+            fontSize: '12px',
+          }}>
             You (Interviewer)
           </div>
         </div>
 
-        {/* Remote */}
-        <div
-          style={{
-            backgroundColor: '#000',
-            borderRadius: '12px',
-            overflow: 'hidden',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            position: 'relative',
-          }}
-        >
+        <div style={{
+          backgroundColor: '#000',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          position: 'relative',
+        }}>
           <video
             ref={remoteVideoRef}
             autoPlay
             playsInline
             style={{ width: '100%', height: '500px', objectFit: 'cover' }}
           />
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '10px',
-              left: '10px',
-              color: 'white',
-              backgroundColor: 'rgba(0,0,0,0.6)',
-              padding: '5px 10px',
-              borderRadius: '5px',
-              fontSize: '12px',
-            }}
-          >
+          <div style={{
+            position: 'absolute',
+            bottom: '10px',
+            left: '10px',
+            color: 'white',
+            backgroundColor: 'rgba(0,0,0,0.6)',
+            padding: '5px 10px',
+            borderRadius: '5px',
+            fontSize: '12px',
+          }}>
             Candidate
           </div>
         </div>
       </div>
 
-      {/* End interview button */}
-      <div
-        style={{
-          maxWidth: '1400px',
-          margin: '0 auto 20px',
-          display: 'flex',
-          justifyContent: 'flex-end',
-        }}
-      >
+      <div style={{
+        maxWidth: '1400px',
+        margin: '0 auto 20px',
+        display: 'flex',
+        justifyContent: 'flex-end',
+      }}>
         <button
           onClick={markInterviewComplete}
           style={{
@@ -779,20 +714,17 @@ const InterviewerView = ({ roomId, userName }) => {
         </button>
       </div>
 
-      {/* Alerts Panel */}
+      {/* Alerts Panel - SAME AS ORIGINAL */}
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '15px',
-          }}
-        >
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '15px',
+        }}>
           <h2 style={{ margin: 0, fontSize: '20px', color: '#333' }}>
             🚨 Monitoring Alerts ({alerts.length})
           </h2>
-
           {alerts.length > 0 && (
             <button
               onClick={clearAllAlerts}
@@ -811,91 +743,64 @@ const InterviewerView = ({ roomId, userName }) => {
             </button>
           )}
         </div>
-
-        <div
-          style={{
-            backgroundColor: 'white',
-            borderRadius: '12px',
-            padding: '20px',
-            maxHeight: '400px',
-            overflowY: 'auto',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-          }}
-        >
+        <div style={{
+          backgroundColor: 'white',
+          borderRadius: '12px',
+          padding: '20px',
+          maxHeight: '400px',
+          overflowY: 'auto',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        }}>
           {alerts.length === 0 ? (
             <p style={{ textAlign: 'center', color: '#999', margin: '40px 0' }}>
               No alerts yet. Monitoring is active.
             </p>
           ) : (
             alerts.map((alert) => (
-              <div
-                key={alert.id}
-                style={{
-                  padding: '15px',
-                  marginBottom: '10px',
-                  borderRadius: '8px',
-                  border: `2px solid ${
-                    alert.severity === 'critical'
-                      ? '#f44336'
-                      : alert.severity === 'high'
-                      ? '#ff9800'
-                      : alert.severity === 'medium'
-                      ? '#ffc107'
-                      : '#2196f3'
-                  }`,
-                  backgroundColor:
-                    alert.severity === 'critical'
-                      ? '#ffebee'
-                      : alert.severity === 'high'
-                      ? '#fff3e0'
-                      : alert.severity === 'medium'
-                      ? '#fff9c4'
-                      : '#e3f2fd',
-                  position: 'relative',
-                }}
-              >
+              <div key={alert.id} style={{
+                padding: '15px',
+                marginBottom: '10px',
+                borderRadius: '8px',
+                border: `2px solid ${
+                  alert.severity === 'critical' ? '#f44336' :
+                  alert.severity === 'high' ? '#ff9800' :
+                  alert.severity === 'medium' ? '#ffc107' : '#2196f3'
+                }`,
+                backgroundColor:
+                  alert.severity === 'critical' ? '#ffebee' :
+                  alert.severity === 'high' ? '#fff3e0' :
+                  alert.severity === 'medium' ? '#fff9c4' : '#e3f2fd',
+                position: 'relative',
+              }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 'bold', marginBottom: '5px', color: '#333' }}>
                       {alert.type === 'AI_DETECTION_RESULT' && '🤖 AI Detection Result'}
                       {alert.type === 'LOOKING_AWAY' && '👁️ Eye Tracking Alert'}
                       {alert.type === 'TAB_SWITCHED' && '⚠️ Tab Switch Detected'}
-                      {!['AI_DETECTION_RESULT', 'LOOKING_AWAY', 'TAB_SWITCHED'].includes(alert.type) &&
-                        alert.type}
+                      {!['AI_DETECTION_RESULT', 'LOOKING_AWAY', 'TAB_SWITCHED'].includes(alert.type) && alert.type}
                     </div>
-
                     <div style={{ fontSize: '14px', color: '#555', marginBottom: '8px' }}>
                       {alert.message}
                     </div>
-
                     {alert.aiData && (
-                      <div
-                        style={{
-                          fontSize: '12px',
-                          color: '#666',
-                          backgroundColor: 'white',
-                          padding: '8px',
-                          borderRadius: '4px',
-                          marginTop: '8px',
-                        }}
-                      >
-                        <div>
-                          <strong>AI Score:</strong> {alert.aiData.aiScore}%
-                        </div>
-                        <div>
-                          <strong>Method:</strong> {alert.aiData.detectionMethod}
-                        </div>
-                        <div>
-                          <strong>Words:</strong> {alert.aiData.wordCount}
-                        </div>
+                      <div style={{
+                        fontSize: '12px',
+                        color: '#666',
+                        backgroundColor: 'white',
+                        padding: '8px',
+                        borderRadius: '4px',
+                        marginTop: '8px',
+                      }}>
+                        <div><strong>AI Score:</strong> {alert.aiData.aiScore}%</div>
+                        <div><strong>Method:</strong> {alert.aiData.detectionMethod}</div>
+                        <div><strong>Words:</strong> {alert.aiData.wordCount}</div>
                       </div>
                     )}
-
                     <div style={{ fontSize: '11px', color: '#999', marginTop: '5px' }}>
                       {new Date(alert.timestamp).toLocaleString()}
                     </div>
                   </div>
-
                   <button
                     onClick={() => clearAlert(alert.id)}
                     style={{

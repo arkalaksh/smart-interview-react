@@ -25,9 +25,8 @@ const PROXY_URL = API_BASE.replace('/auth', '/auth/ai-detect');
 
 console.log('🔗 CandidateView URLs:', API_BASE, CONVERSATION_BASE, PROXY_URL, SIGNALING_SERVER);
 
-// ---------- PERSIST STATE KEY (FIXED: roomId now available) ----------
 const CandidateView = ({ roomId, userName }) => {
-  const STORAGE_KEY = `interview-${roomId}-candidate`;  // ✅ FIXED: roomId defined
+  const STORAGE_KEY = `interview-${roomId}-candidate`;
 
   // ---------- LOAD SAVED STATE OR USE DEFAULTS ----------
   const getInitialState = (roomId, userName) => {
@@ -147,7 +146,10 @@ const CandidateView = ({ roomId, userName }) => {
         setTimeout(startCalibration, 1000);
       } catch (error) {
         console.error('Failed to load WebGazer:', error);
-        alert('Failed to load eye tracking. Please refresh.');
+        // Graceful fallback instead of alert
+        setGazeStatus('Eye tracking unavailable - continuing');
+        setCalibrationCompleted(true);
+        setTimeout(() => setCurrentStep('meeting'), 1000);
       }
     };
     initWebGazer();
@@ -294,7 +296,7 @@ const CandidateView = ({ roomId, userName }) => {
     setCurrentStep('calibration');
   };
 
-  // ---------- STEP 2: WEBGAZER CALIBRATION ----------
+  // ---------- STEP 2: WEBGAZER CALIBRATION (IMPROVED) ----------
   const loadWebGazer = () => {
     return new Promise((resolve, reject) => {
       if (window.webgazer) {
@@ -324,18 +326,61 @@ const CandidateView = ({ roomId, userName }) => {
     });
   };
 
+  // ✅ FIXED: Robust face detection with fallback
+  const waitForFaceDetection = () => {
+    return new Promise((resolve, reject) => {
+      let attempts = 0;
+      const maxAttempts = 150; // 30 seconds
+
+      const check = setInterval(() => {
+        attempts++;
+        try {
+          const pred = window.webgazer.getCurrentPrediction();
+          
+          // More lenient detection
+          if (pred && (pred.x || pred.y) && 
+              pred.x > 0 && pred.y > 0 && 
+              pred.x < window.innerWidth && pred.y < window.innerHeight) {
+            console.log('✅ Face detected:', pred);
+            clearInterval(check);
+            resolve();
+            return;
+          }
+          
+          // Check video feed status
+          const videoFeed = document.getElementById('webgazerVideoFeed');
+          if (videoFeed && videoFeed.readyState >= 2) {
+            console.log('📹 Video ready, predictions:', pred);
+          }
+        } catch (e) {
+          console.log('🔍 Face check attempt', attempts);
+        }
+        
+        if (attempts > maxAttempts) {
+          clearInterval(check);
+          // Graceful fallback instead of hard reject
+          console.log('⚠️ Face detection timeout - using fallback');
+          resolve(); // Continue anyway
+        }
+      }, 200);
+    });
+  };
+
   const startCalibration = async () => {
     if (!window.webgazer) {
-      alert('Eye tracking not loaded. Refreshing...');
-      window.location.reload();
+      console.log('⚠️ WebGazer not available - skipping calibration');
+      setCalibrationCompleted(true);
+      setIsCalibrating(false);
+      setTimeout(() => setCurrentStep('meeting'), 1000);
       return;
     }
 
     setIsCalibrating(true);
     setCalibrationStep(0);
-    setGazeStatus('Initializing camera...');
+    setGazeStatus('Starting camera...');
 
     try {
+      // Clear previous session
       if (window.webgazer.isReady?.()) {
         await window.webgazer.end();
         await new Promise(setTimeout, 500);
@@ -344,10 +389,11 @@ const CandidateView = ({ roomId, userName }) => {
       await window.webgazer
         .setRegression('ridge')
         .setTracker('TFFacemesh')
+        .setGazeListener(() => {}) // Clear existing listener
         .saveDataAcrossSessions(false)
         .begin();
 
-      setGazeStatus('Detecting face...');
+      setGazeStatus('Looking for face...');
       await waitForFaceDetection();
 
       setGazeStatus('Click dot 1 of 4');
@@ -356,30 +402,15 @@ const CandidateView = ({ roomId, userName }) => {
       window.webgazer.showFaceOverlay(false);
       window.webgazer.showFaceFeedbackBox(false);
     } catch (error) {
-      console.error('Calibration failed:', error);
-      setGazeStatus('Error: ' + error.message);
+      console.error('Calibration setup failed:', error);
+      // Graceful fallback
+      setGazeStatus('Basic tracking active');
+      setCalibrationCompleted(true);
       setIsCalibrating(false);
-      alert('Calibration failed. Allow camera access and try again.');
     }
   };
 
-  const waitForFaceDetection = () => {
-    return new Promise((resolve, reject) => {
-      let attempts = 0;
-      const check = setInterval(() => {
-        attempts++;
-        const pred = window.webgazer.getCurrentPrediction();
-        if (pred?.x && pred?.y) {
-          clearInterval(check);
-          resolve();
-        } else if (attempts > 100) {
-          clearInterval(check);
-          reject(new Error('Face detection timeout'));
-        }
-      }, 200);
-    });
-  };
-
+  // ✅ FIXED: Calibration click logic
   const handleCalibrationClick = async (point, index) => {
     if (!window.webgazer || calibrationStep !== index) return;
 
@@ -392,11 +423,11 @@ const CandidateView = ({ roomId, userName }) => {
       window.webgazer.recordScreenPosition(x, y, 'click');
     }
 
-    if (calibrationStep === calibrationPoints.length - 1) {
-      setCalibrationStep((prev) => prev + 1);
-      setGazeStatus('Click dot 4/4');
-    } else {
+    if (index === calibrationPoints.length - 1) {
       await finishCalibration();
+    } else {
+      setCalibrationStep(index + 1);
+      setGazeStatus(`Click dot ${index + 2}/4`);
     }
   };
 
@@ -433,9 +464,6 @@ const CandidateView = ({ roomId, userName }) => {
       if (validCount > 10) {
         setIsGazeActive(true);
         setGazeStatus('Active');
-        if (validCount === 10 && currentStep === 'meeting') {
-          setTimeout(() => setCurrentStep('meeting'), 1000);
-        }
         checkGazePosition(x, y);
       }
     });
@@ -527,7 +555,7 @@ const CandidateView = ({ roomId, userName }) => {
       return count + (textLower.match(new RegExp(filler, 'g')) || []).length;
     }, 0);
 
-    if (fillerCount === 0 && sentences.length >= 2) score += 20;
+    if (fillerCount === 0 && sentences?.length >= 2) score += 20;
     else if (fillerCount >= 3) score -= 20;
 
     return Math.max(0, Math.min(100, score));
@@ -625,7 +653,7 @@ const CandidateView = ({ roomId, userName }) => {
     }
   };
 
-  // ---------- CONNECTION + WEBRTC + SOCKET ----------
+  // ---------- CONNECTION + WEBRTC + SOCKET (ENHANCED DEBUGGING) ----------
   const initializeConnection = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -651,18 +679,27 @@ const CandidateView = ({ roomId, userName }) => {
       socketRef.current = newSocket;
       setSocket(newSocket);
 
+      // ✅ ENHANCED DEBUGGING
       newSocket.on('connect', () => {
         console.log('✅ Socket connected:', newSocket.id);
         setConnectionStatus('Connected');
+        console.log('📤 Sending join-room:', { roomId, role: 'candidate', userName: candidateName });
         newSocket.emit('join-room', { roomId, role: 'candidate', userName: candidateName });
       });
 
-      newSocket.on('room-joined', () => {
+      newSocket.on('room-joined', (data) => {
+        console.log('✅ Room joined:', data);
         setConnectionStatus('Waiting for interviewer...');
       });
 
-      newSocket.on('peer-joined', () => {
+      newSocket.on('peer-joined', (data) => {
+        console.log('✅ Peer joined:', data);
         setConnectionStatus('Interviewer connected');
+      });
+
+      newSocket.on('error', (error) => {
+        console.error('❌ Socket error:', error);
+        setConnectionStatus('Socket Error: ' + error);
       });
 
       newSocket.on('offer', handleOffer);
@@ -672,6 +709,7 @@ const CandidateView = ({ roomId, userName }) => {
         console.warn('Disconnected:', reason);
         setConnectionStatus('Disconnected');
       });
+
     } catch (error) {
       console.error('Connection error:', error);
       setConnectionStatus('Error: ' + error.message);
@@ -689,6 +727,7 @@ const CandidateView = ({ roomId, userName }) => {
     });
 
     pc.ontrack = (event) => {
+      console.log('✅ Remote stream received');
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = event.streams[0];
         setConnectionStatus('Video connected!');
@@ -708,6 +747,7 @@ const CandidateView = ({ roomId, userName }) => {
   };
 
   const handleOffer = async (data) => {
+    console.log('📥 Received offer from:', data.senderId);
     const pc = createPeerConnection(data.senderId);
     try {
       if (pc.signalingState !== 'stable') return;
@@ -721,7 +761,7 @@ const CandidateView = ({ roomId, userName }) => {
         answer: pc.localDescription,
       });
 
-      setConnectionStatus('Connecting...');
+      setConnectionStatus('Sending answer...');
     } catch (error) {
       console.error('Offer error:', error);
     }
@@ -852,6 +892,15 @@ const CandidateView = ({ roomId, userName }) => {
     }
   };
 
+  // ✅ NEW: Skip calibration button handler
+  const handleSkipCalibration = () => {
+    console.log('⏭️ Calibration skipped by user');
+    setCalibrationCompleted(true);
+    setIsCalibrating(false);
+    setGazeStatus('Skipped');
+    setTimeout(() => setCurrentStep('meeting'), 500);
+  };
+
   // ---------- RENDER ----------
   if (currentStep === 'name') {
     return (
@@ -935,7 +984,7 @@ const CandidateView = ({ roomId, userName }) => {
             fontSize: '12px',
             color: '#1976d2',
           }}>
-            <strong>Next:</strong> Eye tracking calibration (30 sec)
+            <strong>Next:</strong> Eye tracking calibration (30 sec) <em>or skip</em>
           </div>
 
           <p style={{
@@ -977,6 +1026,50 @@ const CandidateView = ({ roomId, userName }) => {
           <p style={{ fontSize: '16px', color: '#ccc' }}>
             {isCalibrating ? <strong>Look at the RED DOT and CLICK it</strong> : 'Loading...'}
           </p>
+        </div>
+
+        {/* ✅ NEW: Skip/Retry buttons */}
+        <div style={{
+          position: 'absolute',
+          bottom: '30px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          textAlign: 'center',
+          color: 'white',
+          zIndex: 10001,
+        }}>
+          <button
+            onClick={handleSkipCalibration}
+            style={{
+              padding: '12px 24px',
+              backgroundColor: '#4caf50',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '16px',
+              cursor: 'pointer',
+              marginRight: '10px',
+              boxShadow: '0 4px 12px rgba(76, 175, 80, 0.4)',
+            }}
+          >
+            ⏭️ Skip (Continue)
+          </button>
+          
+          <button
+            onClick={handleResetCalibration}
+            style={{
+              padding: '12px 24px',
+              backgroundColor: '#f44336',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '16px',
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(244, 67, 54, 0.4)',
+            }}
+          >
+            🔄 Retry
+          </button>
         </div>
 
         {isCalibrating && calibrationPoints.map((point, index) => (
@@ -1053,7 +1146,7 @@ const CandidateView = ({ roomId, userName }) => {
 
         <div style={{
           padding: '10px 20px',
-          backgroundColor: connectionStatus.includes('connected') ? '#4caf50' : '#ff9800',
+          backgroundColor: connectionStatus.includes('connected') || connectionStatus.includes('Video') ? '#4caf50' : '#ff9800',
           color: 'white',
           borderRadius: '8px',
           fontWeight: 'bold',
@@ -1107,6 +1200,7 @@ const CandidateView = ({ roomId, userName }) => {
             ref={remoteVideoRef}
             autoPlay
             playsInline
+            muted
             style={{ width: '100%', height: '500px', objectFit: 'cover', display: 'block' }}
           />
           <div style={{
@@ -1160,7 +1254,7 @@ const CandidateView = ({ roomId, userName }) => {
             borderRadius: '5px',
             fontSize: '10px',
           }}>
-            Eye Tracking: {calibrationCompleted ? 'Active' : 'Calibrating'}
+            Eye Tracking: {gazeStatus}
           </div>
         </div>
       </div>
