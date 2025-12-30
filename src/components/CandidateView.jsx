@@ -666,55 +666,58 @@ const CandidateView = ({ roomId, userName }) => {
         webcamRef.current.video.srcObject = stream;
       }
 
-      setConnectionStatus('Connecting...');
+          setConnectionStatus('Connecting...');
 
-      const newSocket = io(SIGNALING_SERVER, {
-        transports: ['websocket', 'polling'],
-        withCredentials: true,
-        reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
-      });
+    // ✅ NEW CODE - Hostinger WebSocket Fix
+    const newSocket = io(SIGNALING_SERVER, SOCKET_OPTIONS);
 
-      socketRef.current = newSocket;
-      setSocket(newSocket);
+    socketRef.current = newSocket;
+    setSocket(newSocket);
 
-      // ✅ ENHANCED DEBUGGING
-      newSocket.on('connect', () => {
-        console.log('✅ Socket connected:', newSocket.id);
-        setConnectionStatus('Connected');
-        console.log('📤 Sending join-room:', { roomId, role: 'candidate', userName: candidateName });
-        newSocket.emit('join-room', { roomId, role: 'candidate', userName: candidateName });
-      });
+    // ✅ ENHANCED DEBUGGING WITH TRANSPORT INFO
+    newSocket.on('connect', () => {
+      console.log('✅ Socket connected:', newSocket.id, `(${SOCKET_OPTIONS.transports[0]})`);
+      setConnectionStatus('Connected ✓');
+      console.log('📤 Sending join-room:', { roomId, role: 'candidate', userName: candidateName });
+      newSocket.emit('join-room', { roomId, role: 'candidate', userName: candidateName });
+    });
 
-      newSocket.on('room-joined', (data) => {
-        console.log('✅ Room joined:', data);
-        setConnectionStatus('Waiting for interviewer...');
-      });
+    newSocket.on('room-joined', (data) => {
+      console.log('✅ Room joined:', data);
+      setConnectionStatus('Waiting for interviewer...');
+    });
 
-      newSocket.on('peer-joined', (data) => {
-        console.log('✅ Peer joined:', data);
-        setConnectionStatus('Interviewer connected');
-      });
+    newSocket.on('peer-joined', (data) => {
+      console.log('✅ Peer joined:', data);
+      setConnectionStatus('Interviewer connected');
+    });
 
-      newSocket.on('error', (error) => {
-        console.error('❌ Socket error:', error);
-        setConnectionStatus('Socket Error: ' + error);
-      });
+    newSocket.on('error', (error) => {
+      console.error('❌ Socket error:', error);
+      setConnectionStatus('Socket Error');
+    });
 
-      newSocket.on('offer', handleOffer);
-      newSocket.on('ice-candidate', handleIceCandidate);
+    newSocket.on('offer', handleOffer);
+    newSocket.on('ice-candidate', handleIceCandidate);
 
-      newSocket.on('disconnect', (reason) => {
-        console.warn('Disconnected:', reason);
-        setConnectionStatus('Disconnected');
-      });
+    newSocket.on('disconnect', (reason) => {
+      console.warn('🔌 Disconnected:', reason);
+      setConnectionStatus('Reconnecting...');
+    });
 
-    } catch (error) {
-      console.error('Connection error:', error);
-      setConnectionStatus('Error: ' + error.message);
-    }
-  };
+    // ✅ Auto-reconnect handler
+    newSocket.on('reconnect', (attemptNumber) => {
+      console.log(`🔄 Reconnected after ${attemptNumber} attempts`);
+      setConnectionStatus('Reconnected ✓');
+      newSocket.emit('join-room', { roomId, role: 'candidate', userName: candidateName });
+    });
+
+  } catch (error) {
+    console.error('Connection error:', error);
+    setConnectionStatus('Error: ' + error.message);
+  }
+};
+
 
   const createPeerConnection = (peerId) => {
     if (peerConnectionRef.current) return peerConnectionRef.current;
