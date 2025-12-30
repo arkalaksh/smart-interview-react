@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
-import { SIGNALING_SERVER, iceServers } from '../utils/config';
+import { SIGNALING_SERVER, iceServers, SOCKET_OPTIONS } from '../utils/config';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 
-// ✅ FIXED: Dynamic Socket URL + API_BASE
+// ✅ Dynamic API Base (production + local)
 const getApiBase = () => {
   if (typeof window !== 'undefined' && window.APP_CONFIG) {
     return window.APP_CONFIG.API_BASE_URL;
@@ -19,27 +19,15 @@ const getApiBase = () => {
     : 'http://localhost:5000/api/auth';
 };
 
-const getSocketUrl = () => {
-  const isProduction =
-    window.location.hostname !== 'localhost' &&
-    window.location.hostname !== '127.0.0.1' &&
-    !window.location.hostname.includes('localhost');
-
-  return isProduction
-    ? 'https://darkcyan-hornet-746720.hostingersite.com'
-    : 'http://localhost:5000';
-};
-
 const API_BASE = getApiBase();
-const SOCKET_URL = getSocketUrl();
-console.log('🔗 InterviewerView URLs:', { API_BASE, SOCKET_URL, SIGNALING_SERVER });
+console.log('🔗 InterviewerView URLs:', { API_BASE, SIGNALING_SERVER, SOCKET_OPTIONS });
 
 // ---------- Helpers ----------
 const loadState = (key, defaultValue) => {
   try {
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : defaultValue;
-  } catch (e) {
+  } catch {
     return defaultValue;
   }
 };
@@ -47,7 +35,7 @@ const loadState = (key, defaultValue) => {
 const saveState = (key, value) => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {}
+  } catch {}
 };
 
 const InterviewerView = ({ roomId, userName }) => {
@@ -67,7 +55,7 @@ const InterviewerView = ({ roomId, userName }) => {
   // Refs
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
-  const peerConnections = useRef(new Map()); // ✅ FIXED: Map for multiple peers
+  const peerConnections = useRef(new Map());
   const socketRef = useRef(null);
   const localStreamRef = useRef(null);
   const remotePeerIdRef = useRef(null);
@@ -78,8 +66,6 @@ const InterviewerView = ({ roomId, userName }) => {
   const lastTranscriptRef = useRef('');
   const savedTranscriptRef = useRef('');
   const speechStartedRef = useRef(false);
-  const pauseTimerRef = useRef(null);
-  const PAUSE_THRESHOLD = 10000;
 
   // Speech Recognition
   const { transcript, listening, resetTranscript, browserSupportsSpeechRecognition } =
@@ -91,7 +77,10 @@ const InterviewerView = ({ roomId, userName }) => {
   // Persist state
   useEffect(() => saveState('interviewer_connectionStatus', connectionStatus), [connectionStatus]);
   useEffect(() => saveState('interviewer_alerts', alerts), [alerts]);
-  useEffect(() => saveState('interviewer_candidateConnected', candidateConnected), [candidateConnected]);
+  useEffect(
+    () => saveState('interviewer_candidateConnected', candidateConnected),
+    [candidateConnected]
+  );
 
   // Mount/Unmount
   useEffect(() => {
@@ -102,6 +91,7 @@ const InterviewerView = ({ roomId, userName }) => {
       console.log('🧹 Interviewer cleaning up on unmount...');
       cleanupConnection();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Initialize connection on meeting step
@@ -114,20 +104,22 @@ const InterviewerView = ({ roomId, userName }) => {
       console.log('🧹 Cleaning up connection on step/name change...');
       cleanupConnection();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, interviewerName]);
 
   // LIVE TRANSCRIPT
   useEffect(() => {
-    if (transcript.trim() && listening) {
-      const newText = transcript.trim();
-      if (newText !== lastTranscriptRef.current) {
-        setFullTranscript((prev) => {
-          const updated = (prev ? prev + '\n' : '') + '[Interviewer Live]: ' + newText;
-          lastTranscriptRef.current = newText;
-          return updated;
-        });
-        setLastSpeechTime(Date.now());
-      }
+    if (!listening) return;
+    const newText = transcript.trim();
+    if (!newText) return;
+
+    if (newText !== lastTranscriptRef.current) {
+      setFullTranscript((prev) => {
+        const updated = (prev ? prev + '\n' : '') + '[Interviewer Live]: ' + newText;
+        lastTranscriptRef.current = newText;
+        return updated;
+      });
+      setLastSpeechTime(Date.now());
     }
   }, [transcript, listening]);
 
@@ -148,6 +140,7 @@ const InterviewerView = ({ roomId, userName }) => {
     const interval = setInterval(() => {
       const currentText = transcript.trim();
       if (!currentText) return;
+
       const newChunk = currentText.replace(savedTranscriptRef.current, '').trim();
       if (newChunk.length > 0) {
         console.log('💾 Auto-saving new transcript chunk (30 sec)...', newChunk);
@@ -155,6 +148,7 @@ const InterviewerView = ({ roomId, userName }) => {
         savedTranscriptRef.current = currentText;
       }
     }, 30000);
+
     return () => clearInterval(interval);
   }, [listening, transcript]);
 
@@ -165,10 +159,10 @@ const InterviewerView = ({ roomId, userName }) => {
       const elapsed = Math.floor((Date.now() - lastSpeechTime) / 1000);
       setSecondsSinceLastSpeech(elapsed);
     }, 1000);
+
     return () => clearInterval(interval);
   }, [listening, lastSpeechTime]);
 
-  // Mount logger
   useEffect(() => {
     console.log('👨‍💼 InterviewerView MOUNTED - Room ID:', roomId, 'User:', userName || 'Guest');
   }, [roomId, userName]);
@@ -187,6 +181,7 @@ const InterviewerView = ({ roomId, userName }) => {
       language: 'en-US',
       interimResults: true,
     });
+
     console.log('🎤 Interviewer speech recognition started');
   };
 
@@ -200,6 +195,7 @@ const InterviewerView = ({ roomId, userName }) => {
           interviewerName: interviewerName.trim(),
         }),
       });
+
       const data = await response.json();
       if (response.ok) console.log('💾 Interviewer name saved:', data.message);
       else console.error('❌ Failed to save interviewer name:', data.error);
@@ -219,6 +215,7 @@ const InterviewerView = ({ roomId, userName }) => {
           questionText,
         }),
       });
+
       const data = await response.json();
       if (response.ok) console.log('❓ Question saved:', data.questionId);
       else console.error('❌ Question save error:', data.error);
@@ -277,7 +274,7 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   };
 
-  // ✅ FIXED: Socket.IO with polling-first
+  // ✅ Socket + WebRTC (Hostinger-safe)
   const initializeConnection = async () => {
     try {
       console.log('📹 Requesting interviewer camera and microphone...');
@@ -288,37 +285,24 @@ const InterviewerView = ({ roomId, userName }) => {
 
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
       setConnectionStatus('Camera ready');
 
-      console.log('🔌 Creating socket connection to:', SOCKET_URL);
-      const socket = io(SOCKET_URL, {
-        path: '/socket.io/',
-        transports: ['polling', 'websocket'], // ✅ Polling FIRST
-        timeout: 20000,
-        forceNew: true,
-        reconnection: true,
-        reconnectionAttempts: 10,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        query: { roomId },
-        cors: {
-          origin: "*",
-          methods: ["GET", "POST"]
-        }
-      });
-
+      console.log('🔌 Creating socket connection to:', SIGNALING_SERVER);
+      const socket = io(SIGNALING_SERVER, SOCKET_OPTIONS);
       socketRef.current = socket;
 
       socket.on('connect', () => {
         console.log('✅ Socket connected:', socket.id);
-        setConnectionStatus('Connected');
+        setConnectionStatus('Connected ✓');
         socket.emit('join-room', { roomId, role: 'interviewer', userName });
       });
 
+      // ✅ Important: handles case where candidate already joined BEFORE interviewer
       socket.on('room-joined', (data) => {
         console.log('✅ room-joined:', data);
         setConnectionStatus('Waiting for candidate...');
-        if (data.otherPeerId) {
+        if (data?.otherPeerId) {
           console.log('🔗 Candidate already in room -> initiating offer to', data.otherPeerId);
           remotePeerIdRef.current = data.otherPeerId;
           setCandidateConnected(true);
@@ -335,6 +319,7 @@ const InterviewerView = ({ roomId, userName }) => {
 
       socket.on('answer', handleAnswer);
       socket.on('ice-candidate', handleIceCandidate);
+
       socket.on('end-interview', () => {
         console.log('👋 Candidate ended interview');
         setCandidateConnected(false);
@@ -351,14 +336,20 @@ const InterviewerView = ({ roomId, userName }) => {
       });
 
       socket.on('disconnect', (reason) => {
-        console.warn('⚠️ Socket disconnected:', reason);
-        setConnectionStatus('Disconnected: ' + reason);
+        console.warn('🔌 Disconnected:', reason);
+        setConnectionStatus('Reconnecting...');
         setCandidateConnected(false);
       });
 
       socket.on('connect_error', (err) => {
-        console.error('❌ Socket connect_error', err);
+        console.error('❌ Socket connect_error:', err);
         setConnectionStatus('Connection error');
+      });
+
+      socket.on('reconnect', (attempt) => {
+        console.log('🔄 Reconnected after', attempt, 'attempts');
+        setConnectionStatus('Reconnected ✓');
+        socket.emit('join-room', { roomId, role: 'interviewer', userName });
       });
 
       setConnectionStatus('Ready');
@@ -368,7 +359,7 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   };
 
-  // ✅ FIXED: SINGLE PC PER PEER (No renegotiation errors!)
+  // ✅ SINGLE PC PER PEER
   const createPeerConnection = (peerId) => {
     if (peerConnections.current.has(peerId)) {
       console.log('🔗 Reusing existing PC for', peerId);
@@ -417,7 +408,6 @@ const InterviewerView = ({ roomId, userName }) => {
     return pc;
   };
 
-  // ✅ FIXED: Safe offer creation
   const createOffer = async (peerId) => {
     try {
       console.log('📤 createOffer -> peerId:', peerId);
@@ -439,7 +429,7 @@ const InterviewerView = ({ roomId, userName }) => {
         offer: pc.localDescription,
       });
 
-      // Flush pending ICE
+      // Flush pending ICE (if any were queued before target id)
       if (pendingIceCandidatesRef.current.length > 0) {
         pendingIceCandidatesRef.current.forEach((c) => {
           socketRef.current.emit('ice-candidate', {
@@ -454,7 +444,6 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   };
 
-  // ✅ FIXED: Safe answer handling
   const handleAnswer = async (data) => {
     console.log('📨 handleAnswer', data);
     try {
@@ -479,7 +468,8 @@ const InterviewerView = ({ roomId, userName }) => {
   };
 
   const handleIceCandidate = async (data) => {
-    const pc = peerConnections.current.get(remotePeerIdRef.current);
+    const peerId = remotePeerIdRef.current;
+    const pc = peerId ? peerConnections.current.get(peerId) : null;
     if (!data?.candidate || !pc) return;
 
     if (pc.remoteDescription && pc.remoteDescription.type) {
@@ -493,11 +483,8 @@ const InterviewerView = ({ roomId, userName }) => {
     }
   };
 
-  // ✅ FIXED: Proper cleanup
   const cleanupConnection = () => {
-    if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current);
-
-    peerConnections.current.forEach(pc => pc.close());
+    peerConnections.current.forEach((pc) => pc.close());
     peerConnections.current.clear();
 
     if (localStreamRef.current) {
@@ -526,23 +513,27 @@ const InterviewerView = ({ roomId, userName }) => {
   // Name Entry UI
   if (step === 'nameEntry') {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        fontFamily: 'Arial',
-        backgroundColor: '#f4f4f4',
-        padding: 20,
-      }}>
-        <div style={{
-          maxWidth: 400,
-          width: '100%',
-          backgroundColor: 'white',
-          borderRadius: 12,
-          padding: 40,
-          boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
-        }}>
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          fontFamily: 'Arial',
+          backgroundColor: '#f4f4f4',
+          padding: 20,
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 400,
+            width: '100%',
+            backgroundColor: 'white',
+            borderRadius: 12,
+            padding: 40,
+            boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
+          }}
+        >
           <h2 style={{ marginBottom: 20 }}>Enter Your Name</h2>
           <input
             type="text"
@@ -584,24 +575,30 @@ const InterviewerView = ({ roomId, userName }) => {
     );
   }
 
-  // Meeting UI (same as original)
+  // Meeting UI
   return (
-    <div style={{
-      padding: '20px',
-      fontFamily: 'Arial',
-      backgroundColor: '#f5f5f5',
-      minHeight: '100vh',
-    }}>
+    <div
+      style={{
+        padding: '20px',
+        fontFamily: 'Arial',
+        backgroundColor: '#f5f5f5',
+        minHeight: '100vh',
+      }}
+    >
       {/* Header */}
-      <div style={{
-        maxWidth: '1400px',
-        margin: '0 auto 20px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-      }}>
+      <div
+        style={{
+          maxWidth: '1400px',
+          margin: '0 auto 20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
         <div>
-          <h1 style={{ margin: 0, fontSize: '24px', color: '#333' }}>👨‍💼 Interviewer Dashboard</h1>
+          <h1 style={{ margin: 0, fontSize: '24px', color: '#333' }}>
+            👨‍💼 Interviewer Dashboard
+          </h1>
           <p style={{ margin: '5px 0 0 0', fontSize: '14px', color: '#666' }}>
             Room:{' '}
             <code style={{ backgroundColor: '#e0e0e0', padding: '2px 6px', borderRadius: '3px' }}>
@@ -614,33 +611,40 @@ const InterviewerView = ({ roomId, userName }) => {
             {listening ? ` | Silent: ${secondsSinceLastSpeech}s` : ''}
           </p>
         </div>
-        <div style={{
-          padding: '10px 20px',
-          backgroundColor: candidateConnected ? '#4caf50' : '#ff9800',
-          color: 'white',
-          borderRadius: '8px',
-          fontWeight: 'bold',
-          fontSize: '14px',
-        }}>
+
+        <div
+          style={{
+            padding: '10px 20px',
+            backgroundColor: candidateConnected ? '#4caf50' : '#ff9800',
+            color: 'white',
+            borderRadius: '8px',
+            fontWeight: 'bold',
+            fontSize: '14px',
+          }}
+        >
           {candidateConnected ? '✅ Candidate Connected' : '⏳ Waiting for Candidate'}
         </div>
       </div>
 
       {/* Video Grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '20px',
-        maxWidth: '1400px',
-        margin: '0 auto 20px',
-      }}>
-        <div style={{
-          backgroundColor: '#000',
-          borderRadius: '12px',
-          overflow: 'hidden',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-          position: 'relative',
-        }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '20px',
+          maxWidth: '1400px',
+          margin: '0 auto 20px',
+        }}
+      >
+        <div
+          style={{
+            backgroundColor: '#000',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            position: 'relative',
+          }}
+        >
           <video
             ref={localVideoRef}
             autoPlay
@@ -648,54 +652,63 @@ const InterviewerView = ({ roomId, userName }) => {
             playsInline
             style={{ width: '100%', height: '500px', objectFit: 'cover' }}
           />
-          <div style={{
-            position: 'absolute',
-            bottom: '10px',
-            left: '10px',
-            color: 'white',
-            backgroundColor: 'rgba(0,0,0,0.6)',
-            padding: '5px 10px',
-            borderRadius: '5px',
-            fontSize: '12px',
-          }}>
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '10px',
+              left: '10px',
+              color: 'white',
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              padding: '5px 10px',
+              borderRadius: '5px',
+              fontSize: '12px',
+            }}
+          >
             You (Interviewer)
           </div>
         </div>
 
-        <div style={{
-          backgroundColor: '#000',
-          borderRadius: '12px',
-          overflow: 'hidden',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-          position: 'relative',
-        }}>
+        <div
+          style={{
+            backgroundColor: '#000',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            position: 'relative',
+          }}
+        >
           <video
             ref={remoteVideoRef}
             autoPlay
             playsInline
             style={{ width: '100%', height: '500px', objectFit: 'cover' }}
           />
-          <div style={{
-            position: 'absolute',
-            bottom: '10px',
-            left: '10px',
-            color: 'white',
-            backgroundColor: 'rgba(0,0,0,0.6)',
-            padding: '5px 10px',
-            borderRadius: '5px',
-            fontSize: '12px',
-          }}>
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '10px',
+              left: '10px',
+              color: 'white',
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              padding: '5px 10px',
+              borderRadius: '5px',
+              fontSize: '12px',
+            }}
+          >
             Candidate
           </div>
         </div>
       </div>
 
-      <div style={{
-        maxWidth: '1400px',
-        margin: '0 auto 20px',
-        display: 'flex',
-        justifyContent: 'flex-end',
-      }}>
+      {/* End interview */}
+      <div
+        style={{
+          maxWidth: '1400px',
+          margin: '0 auto 20px',
+          display: 'flex',
+          justifyContent: 'flex-end',
+        }}
+      >
         <button
           onClick={markInterviewComplete}
           style={{
@@ -714,14 +727,16 @@ const InterviewerView = ({ roomId, userName }) => {
         </button>
       </div>
 
-      {/* Alerts Panel - SAME AS ORIGINAL */}
+      {/* Alerts Panel */}
       <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '15px',
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '15px',
+          }}
+        >
           <h2 style={{ margin: 0, fontSize: '20px', color: '#333' }}>
             🚨 Monitoring Alerts ({alerts.length})
           </h2>
@@ -743,64 +758,91 @@ const InterviewerView = ({ roomId, userName }) => {
             </button>
           )}
         </div>
-        <div style={{
-          backgroundColor: 'white',
-          borderRadius: '12px',
-          padding: '20px',
-          maxHeight: '400px',
-          overflowY: 'auto',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        }}>
+
+        <div
+          style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '20px',
+            maxHeight: '400px',
+            overflowY: 'auto',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          }}
+        >
           {alerts.length === 0 ? (
             <p style={{ textAlign: 'center', color: '#999', margin: '40px 0' }}>
               No alerts yet. Monitoring is active.
             </p>
           ) : (
             alerts.map((alert) => (
-              <div key={alert.id} style={{
-                padding: '15px',
-                marginBottom: '10px',
-                borderRadius: '8px',
-                border: `2px solid ${
-                  alert.severity === 'critical' ? '#f44336' :
-                  alert.severity === 'high' ? '#ff9800' :
-                  alert.severity === 'medium' ? '#ffc107' : '#2196f3'
-                }`,
-                backgroundColor:
-                  alert.severity === 'critical' ? '#ffebee' :
-                  alert.severity === 'high' ? '#fff3e0' :
-                  alert.severity === 'medium' ? '#fff9c4' : '#e3f2fd',
-                position: 'relative',
-              }}>
+              <div
+                key={alert.id}
+                style={{
+                  padding: '15px',
+                  marginBottom: '10px',
+                  borderRadius: '8px',
+                  border: `2px solid ${
+                    alert.severity === 'critical'
+                      ? '#f44336'
+                      : alert.severity === 'high'
+                        ? '#ff9800'
+                        : alert.severity === 'medium'
+                          ? '#ffc107'
+                          : '#2196f3'
+                  }`,
+                  backgroundColor:
+                    alert.severity === 'critical'
+                      ? '#ffebee'
+                      : alert.severity === 'high'
+                        ? '#fff3e0'
+                        : alert.severity === 'medium'
+                          ? '#fff9c4'
+                          : '#e3f2fd',
+                  position: 'relative',
+                }}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 'bold', marginBottom: '5px', color: '#333' }}>
                       {alert.type === 'AI_DETECTION_RESULT' && '🤖 AI Detection Result'}
                       {alert.type === 'LOOKING_AWAY' && '👁️ Eye Tracking Alert'}
                       {alert.type === 'TAB_SWITCHED' && '⚠️ Tab Switch Detected'}
-                      {!['AI_DETECTION_RESULT', 'LOOKING_AWAY', 'TAB_SWITCHED'].includes(alert.type) && alert.type}
+                      {!['AI_DETECTION_RESULT', 'LOOKING_AWAY', 'TAB_SWITCHED'].includes(alert.type) &&
+                        alert.type}
                     </div>
+
                     <div style={{ fontSize: '14px', color: '#555', marginBottom: '8px' }}>
                       {alert.message}
                     </div>
+
                     {alert.aiData && (
-                      <div style={{
-                        fontSize: '12px',
-                        color: '#666',
-                        backgroundColor: 'white',
-                        padding: '8px',
-                        borderRadius: '4px',
-                        marginTop: '8px',
-                      }}>
-                        <div><strong>AI Score:</strong> {alert.aiData.aiScore}%</div>
-                        <div><strong>Method:</strong> {alert.aiData.detectionMethod}</div>
-                        <div><strong>Words:</strong> {alert.aiData.wordCount}</div>
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          color: '#666',
+                          backgroundColor: 'white',
+                          padding: '8px',
+                          borderRadius: '4px',
+                          marginTop: '8px',
+                        }}
+                      >
+                        <div>
+                          <strong>AI Score:</strong> {alert.aiData.aiScore}%
+                        </div>
+                        <div>
+                          <strong>Method:</strong> {alert.aiData.detectionMethod}
+                        </div>
+                        <div>
+                          <strong>Words:</strong> {alert.aiData.wordCount}
+                        </div>
                       </div>
                     )}
+
                     <div style={{ fontSize: '11px', color: '#999', marginTop: '5px' }}>
                       {new Date(alert.timestamp).toLocaleString()}
                     </div>
                   </div>
+
                   <button
                     onClick={() => clearAlert(alert.id)}
                     style={{
